@@ -1,0 +1,19 @@
+icp_name: US Property Management — Inbox & Scheduling Automation
+description: >
+  Small US residential property management firms (managing ~50-500 units) with
+  heavy tenant email, showing scheduling, and maintenance-request intake done by
+  hand. Low AI-agency competition. Custom gap-based emails (gap-writer).
+  No money talk; keep the David Geha / Automate, automatelb.com link.
+geography: US
+country_filter: US
+vertical: property
+scoring: { qualify_threshold: 70, send_threshold: 70 }
+target_person: [owner, operations lead]
+firm_size: "50-500 units"
+signals:
+  positive: [tenant_email_manual, showing_scheduling_backforth, maintenance_intake_form, shared_inbox_visible]
+  negative: [modern_booking]
+draft_mode: custom
+no_emdash: true
+no_money_talk: true
+keep_signature_link: true

@@ -1,0 +1,19 @@
+icp_name: US Med Spas / Dental / Specialty Clinics — Inbox & Scheduling Automation
+description: >
+  Small US med spas, dental practices, and specialty clinics (PT, chiro,
+  dermatology, fertility, counseling) booking by phone/contact-form and chasing
+  no-shows by hand. Custom gap-based emails (gap-writer). Avoid patient health
+  data (HIPAA). No money talk; keep the David Geha / Automate, automatelb.com link.
+geography: US
+country_filter: US
+vertical: clinic
+scoring: { qualify_threshold: 70, send_threshold: 70 }
+target_person: [owner, practice manager]
+notes: "Watch HIPAA. Never reference specific patient data. modern_booking => skip (gap solved)."
+signals:
+  positive: [phone_or_form_booking, no_show_chasing, new_patient_intake_email, no_online_scheduling]
+  negative: [modern_booking]
+draft_mode: custom
+no_emdash: true
+no_money_talk: true
+keep_signature_link: true

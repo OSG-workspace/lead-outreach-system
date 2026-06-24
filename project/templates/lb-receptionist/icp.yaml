@@ -1,0 +1,151 @@
+run_slug: 2026-05-28-lb-receptionist
+created: 2026-05-28
+
+product:
+  name: "AI Receptionist (overflow + after-hours)"
+  one_liner: "Answers the phone and WhatsApp when staff cannot. Books appointments, takes inquiries, in Arabic + French + English. Owned system, no platform lock-in."
+  channels_supported:
+    - phone (PSTN inbound)
+    - WhatsApp inbound
+    - signature-block escalation to human
+
+target:
+  description: "Lebanon businesses where the phone is the dominant customer channel and where after-hours or overflow calls represent a real revenue leak. Receptionist-driven workflows that are chronically understaffed due to brain drain."
+  industries:
+    - dental clinics, cosmetic / aesthetic / dermatology / hair transplant / IVF clinics
+    - hospitals, polyclinics, specialist clinics, diagnostics labs
+    - hotels (4-5 star + boutique + mountain resorts), high-volume restaurants
+    - real estate brokerages (residential + commercial + luxury)
+    - automotive dealerships and service centers
+    - law firms, insurance companies, 24/7 pharmacies
+    - veterinary clinics, universities, logistics + delivery
+  geo:
+    countries:
+      - "Lebanon"
+    cities_focus:
+      - "Beirut (Hamra, Achrafieh, Verdun, Mar Mikhael, Gemmayzeh, Mathaf, Sodeco, Badaro, Manara)"
+      - "Greater Beirut (Hazmieh, Baabda, Jal el Dib, Antelias, Kaslik, Jounieh)"
+      - "Tripoli (North Lebanon catchment)"
+      - "Saida + Tyre (South)"
+      - "Zahle + Bekaa"
+      - "Byblos / Jbeil"
+      - "Mountain resorts (Faraya, Faqra, Mzaar, Broumana, Bhamdoun, Aley)"
+  size_signal: "1+ location (single-location clinics included). The receptionist-pain bar is more about visible phone-led customer flow than location count."
+
+sources:
+  - web (DuckDuckGo via source-agent-lb)
+
+hard_filters:
+  - "Must operate primarily inside Lebanon (.lb TLD, or Lebanon city in address)"
+  - "Must have a public website (Instagram-only businesses skip)"
+  - "Must have a visible phone number on the site (this is the receptionist-pain signal)"
+  - "Must have a decision-maker resolvable from About / team / press / LinkedIn"
+  - "Exclude pure aggregators / directories / news / job listings"
+  - "Exclude embassies, government offices, NGOs"
+  - "Exclude pure online-only e-commerce (no inbound call workflow)"
+
+buyer_profile:
+  required: true
+  acceptable_titles:
+    - "Owner"
+    - "Founder"
+    - "Co-Founder"
+    - "Managing Partner"
+    - "Medical Director"
+    - "Clinic Director"
+    - "Practice Manager (only if score >= 80 and no Owner findable)"
+    - "General Manager"
+    - "Hotel Manager"
+    - "Sales Director (auto dealerships only)"
+    - "Managing Director / MD"
+    - "CEO"
+  reject_titles:
+    - "Receptionist"
+    - "Front-desk staff"
+    - "Marketing Coordinator"
+    - "Branch employee"
+    - "IT support"
+  generic_inbox_policy:
+    rule: "Generic inboxes (info@, contact@, reservations@, bookings@) are DROPPED at draft time per the decision-maker-email-required feedback rule. Stage 5.5 must surface a direct email; otherwise the lead is killed."
+    reason: "Founder/owner/MD only. No generic mailbox fallback."
+
+scoring:
+  threshold_qualify: 70
+  threshold_send: 70
+  hard_floor: 60
+  weights:
+    fit: 25
+    receptionist_pain: 30
+    reachability: 20
+    diaspora_signal: 15
+    buyer: 10
+
+  fit_criteria:
+    - { points: 10, signal: "Operates in a Phase-1 vertical (dental / cosmetic / hospital / polyclinic / IVF)" }
+    - { points: 7,  signal: "Operates in a Phase-2 vertical (real estate / hotels / auto dealership / restaurants)" }
+    - { points: 4,  signal: "Operates in a Phase-3 vertical (law / insurance / pharmacy / vet / education / logistics)" }
+    - { points: 3,  signal: "Visible activity in past 12 months (press / Instagram / new location)" }
+
+  receptionist_pain_criteria:
+    description: "How clearly does this business need the AI receptionist? The harder the phone is working, the higher the score."
+    - { points: 12, signal: "Phone number is the primary CTA on the homepage / contact page (no online booking system)" }
+    - { points: 10, signal: "WhatsApp number prominently displayed for inquiries / bookings (manual triage)" }
+    - { points: 8,  signal: "Visible 'open 24/7' or 'round-the-clock' messaging — proves after-hours volume exists" }
+    - { points: 8,  signal: "Multi-language site (Arabic + French + English) — trilingual call handling implied" }
+    - { points: 7,  signal: "Receptionist / front-desk job posting visible on careers / Hirelebanese / Bayt in past 6 months" }
+    - { points: 6,  signal: "Contact form is the only intake — every form submission still routes to a person" }
+    - { points: 6,  signal: "Multi-branch with separate phone per branch (no central call routing)" }
+    - { points: 4,  signal: "Press mention of 'overwhelmed staff', 'long wait times', 'high call volume'" }
+
+  reachability_criteria:
+    - { points: 10, signal: "Decision-maker direct email visible on About / team / LinkedIn / press" }
+    - { points: 6,  signal: "Decision-maker LinkedIn profile findable with name + role (email guessable from pattern, verifiable)" }
+    - { points: 6,  signal: "Decision-maker personal WhatsApp / mobile number publicly listed" }
+    - { points: 4,  signal: "Functional website with real contact details (not Linktree / IG-only)" }
+    - { points: -10, signal: "PENALTY: only generic info@ / contact@ / reservations@ inbox available" }
+
+  diaspora_signal_criteria:
+    description: "Does this business serve callers from outside Lebanon? Diaspora and medical-tourism callers are the after-hours overflow we are pitching."
+    - { points: 8, signal: "Site has English + French + Arabic (trilingual = international audience)" }
+    - { points: 7, signal: "Medical tourism explicitly mentioned (procedures for Gulf / EU / North American patients)" }
+    - { points: 6, signal: "Reviews / testimonials from non-Lebanese patients (Iraqi, Saudi, Emirati, French, US, Australian, Canadian, Nigerian)" }
+    - { points: 5, signal: "WhatsApp business listed with country-code prefix (+961) and welcomes international inquiries" }
+    - { points: 5, signal: "International time-zone hours implied (online appointment slots in evenings / weekends)" }
+    - { points: 4, signal: "Diaspora-focused real estate offering (sale-to-non-residents, off-plan, residency-by-investment)" }
+    - { points: 4, signal: "Hotel / restaurant on global booking platforms (booking.com / agoda / opentable) suggesting international guests" }
+
+  buyer_criteria:
+    - { points: 8, signal: "Owner / Founder / Managing Partner email resolvable and direct (not info@)" }
+    - { points: 4, signal: "Decision-maker name confirmed via About page or press article" }
+    - { points: 2, signal: "Family-owned business with publicly named owner (very common in Lebanon)" }
+
+  bonus:
+    - { points: 5, signal: "4.4★+ rating with 100+ Google reviews (proven volume → manual ops likely overflowing)" }
+    - { points: 4, signal: "Public mention of recent expansion / new branch / new doctor partner (growth → more call load)" }
+    - { points: 3, signal: "Already runs Calendly / Setmore / Fresha / Picktime / Doctolib for booking (digital-friendly, AI receptionist plugs in cleanly)" }
+    - { points: 3, signal: "Featured in medical-tourism press / aesthetic-tourism listicles (international call demand confirmed)" }
+
+  penalties:
+    - { points: -25, signal: "Already markets an AI receptionist / AI agent / IVR with NLU on their site (gap closed)" }
+    - { points: -20, signal: "Public partnership with a global contact-center / BPO (already outsourced this layer)" }
+    - { points: -15, signal: "Site explicitly states no call answering during night / weekend, no callback workflow — small operator with no real volume" }
+    - { points: -10, signal: "Single solo practitioner with no clinic name, no staff page, no real business identity (probably too small)" }
+    - { points: -10, signal: "Visibly distressed business (closing, bankruptcy filings, layoff press in past 3 months)" }
+
+run_settings:
+  source_target_raw: 150
+  qualified_target: 80
+  send_cap: 100
+  send_cap_reason: "First Lebanon run — small enough cap to learn, big enough to get signal"
+  warm_up_state: "first_send_to_new_country"
+  approval_mode: "full_auto"
+  channels:
+    - email
+    - whatsapp
+  notes:
+    - "Lebanon is a single-country run; merge_candidates.py reads countries.txt = LB and rejects non-LB hits."
+    - "source_agent.txt points fire.md to source-agent-lb (Lebanon ICP)."
+    - "pitch.json overlays draft_emails.py and draft_whatsapp.py with Lebanon AI-receptionist copy."
+    - "Dual-channel: every survived lead with both contact_email and contact_phone gets BOTH an email and a WhatsApp draft. Leads with only one are drafted on whichever channel is reachable."
+    - "Mr./Mrs. salutation contract still applies on BOTH channels."
+    - "No em-dashes or en-dashes in body copy (enforced by _strip_dashes in both drafters)."

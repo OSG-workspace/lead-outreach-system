@@ -1,0 +1,153 @@
+#!/bin/bash
+# Lead Outreach System — Free Stack Installer
+# Run from project root: ./tools/install.sh
+set -e
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+
+echo "═══════════════════════════════════════════════════════════════"
+echo "  Lead Outreach System — Free Stack Installer"
+echo "═══════════════════════════════════════════════════════════════"
+
+# ── Pre-flight ──────────────────────────────────────────────────────
+echo ""
+echo "▶ Pre-flight checks..."
+
+OS=$(uname -s)
+ARCH=$(uname -m)
+echo "   OS:   $OS / $ARCH"
+
+MISSING=()
+for cmd in git python3 curl; do
+  if ! command -v $cmd &> /dev/null; then
+    MISSING+=("$cmd")
+  fi
+done
+
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo "   ✗ Missing: ${MISSING[*]}"
+  echo ""
+  if [ "$OS" = "Darwin" ]; then
+    echo "   On macOS install via Homebrew:"
+    echo "   brew install ${MISSING[*]}"
+  else
+    echo "   On Linux install via your package manager (apt/yum/etc.)"
+  fi
+  exit 1
+fi
+echo "   ✓ Base tools present"
+
+PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+PY_MAJOR=$(echo $PY_VERSION | cut -d. -f1)
+PY_MINOR=$(echo $PY_VERSION | cut -d. -f2)
+if [ "$PY_MAJOR" -lt 3 ] || ([ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 10 ]); then
+  echo "   ✗ Python 3.10+ required (found $PY_VERSION)"
+  exit 1
+fi
+echo "   ✓ Python $PY_VERSION"
+
+# ── Step 1: Google Maps scraper ─────────────────────────────────────
+echo ""
+echo "▶ Installing Google Maps scraper..."
+
+mkdir -p tools
+
+if [ -f "tools/google-maps-scraper" ]; then
+  echo "   ✓ Already installed, skipping"
+else
+  # Prefer Docker if available — least friction
+  if command -v docker &> /dev/null && docker ps &> /dev/null; then
+    echo "   Using Docker mode..."
+    docker pull gosom/google-maps-scraper:latest > /dev/null
+    cat > tools/google-maps-scraper << 'EOF'
+#!/bin/bash
+docker run --rm \
+  -v "$(pwd):/workdir" \
+  -w /workdir \
+  gosom/google-maps-scraper:latest \
+  "$@"
+EOF
+    chmod +x tools/google-maps-scraper
+    echo "   ✓ Installed via Docker"
+  elif command -v go &> /dev/null; then
+    echo "   Using Go build..."
+    cd tools
+    git clone --depth 1 https://github.com/gosom/google-maps-scraper.git gosom-src > /dev/null 2>&1
+    cd gosom-src
+    go mod download > /dev/null 2>&1
+    go build -o ../google-maps-scraper > /dev/null 2>&1
+    cd ..
+    rm -rf gosom-src
+    cd "$PROJECT_ROOT"
+    echo "   ✓ Built from source"
+  else
+    echo "   ✗ Need Docker OR Go to install."
+    echo "   On macOS:   brew install --cask docker   (or: brew install go)"
+    echo "   On Linux:   install Docker (preferred) or Go from https://go.dev"
+    exit 1
+  fi
+fi
+
+# ── Step 2: Python venv + scrapers ──────────────────────────────────
+echo ""
+echo "▶ Installing Python scrapers..."
+
+if [ ! -d "tools/venv" ]; then
+  python3 -m venv tools/venv
+  echo "   ✓ Created venv"
+fi
+
+# shellcheck disable=SC1091
+source tools/venv/bin/activate
+pip install --quiet --upgrade pip
+
+echo "   Installing ddgs (DuckDuckGo)..."
+pip install --quiet ddgs
+
+echo "   Installing crawl4ai + Playwright..."
+pip install --quiet crawl4ai
+playwright install chromium > /dev/null 2>&1 || {
+  echo "   ⚠ playwright install chromium had warnings (likely missing system libs)"
+  echo "   On Linux you may need:  sudo apt install libnss3 libxkbcommon0 libgbm1 ..."
+}
+
+deactivate
+echo "   ✓ Python scrapers installed"
+
+# ── Step 3: run.sh wrapper ──────────────────────────────────────────
+cat > tools/run.sh << 'EOF'
+#!/bin/bash
+# Run a Python tool inside the project venv
+set -e
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$PROJECT_ROOT/tools/venv/bin/activate"
+python3 "$@"
+EOF
+chmod +x tools/run.sh
+
+# ── Step 4: install test scripts (already in tools/scripts/) ────────
+chmod +x tools/scripts/*.sh 2>/dev/null || true
+
+# ── Done ────────────────────────────────────────────────────────────
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "  ✓ Installation complete!"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+echo "Next steps:"
+echo ""
+echo "  1. Copy .env.example to .env and fill in:"
+echo "       BREVO_MCP_TOKEN, BREVO_SENDER_EMAIL, OBSIDIAN_VAULT_PATH"
+echo ""
+echo "  2. Verify everything works:"
+echo "       ./tools/scripts/test-maps.sh"
+echo "       ./tools/run.sh tools/scripts/test-ddg.py"
+echo "       ./tools/run.sh tools/scripts/test-crawl4ai.py"
+echo ""
+echo "  3. Open in Claude Code:"
+echo "       claude"
+echo "       /vault-bootstrap"
+echo "       /find-leads \"your target description, pitch on the gap\""
+echo ""

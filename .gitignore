@@ -1,0 +1,38 @@
+# ===== Secrets — NEVER commit (live API tokens, WhatsApp creds) =====
+**/.env
+.env.local
+!**/.env.example
+**/.wwebjs_cache/
+**/.wwebjs_auth/
+
+# ===== Contact PII — excluded by request (sent history, bounces, lead records) =====
+**/sent-log.md
+**/bounce-list.md
+**/lead-outreach/leads/
+
+# ===== Run artifacts — large (27GB scraped HTML) + PII =====
+runs/
+**/raw_html/
+
+# ===== Retired/quarantined data (old vault copies containing PII) =====
+**/.archive/
+
+# ===== Python / Node / build caches =====
+venv/
+**/__pycache__/
+*.pyc
+**/.pytest_cache/
+**/.pycache/
+node_modules/
+*.log
+
+# ===== Git backups created during the org push =====
+**/.git.bak/
+
+# ===== Large regenerable binary (gosom maps scraper; installed by setup-tools, deprecated Maps path) =====
+**/google-maps-scraper
+*.bin
+
+# ===== misc / OS =====
+files.zip
+.DS_Store

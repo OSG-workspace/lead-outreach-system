@@ -1,0 +1,57 @@
+run_slug: 2026-06-22-lb-enterprise
+created: 2026-06-22
+
+product:
+  name: "Custom AI systems (consulting)"
+  one_liner: "David Geha (AUB engineering student) and team build custom AI that removes repetitive company workflows. Clients across Lebanon, the GCC, and India."
+  channels_supported:
+    - WhatsApp outbound (decision-maker direct mobile)
+
+target:
+  description: "The biggest Lebanese companies and brands with enough manual, repetitive workflow (customer questions, intake, order status, clienteling, reporting) to automate."
+  industries:
+    - fashion / couture houses
+    - luxury and department retail
+    - banks and financial groups
+    - FMCG / trading / industrial groups
+    - diversified conglomerates / holdings
+    - large hospitality / F&B groups
+    - large real-estate developers, telecoms, pharma/healthcare groups
+  geo:
+    countries: ["Lebanon"]
+  size_signal: "Large / prominent company or well-known brand. Not small single-location businesses."
+
+sources:
+  - web (DuckDuckGo via source-agent-lb-enterprise)
+
+hard_filters:
+  - "Must be a large/prominent Lebanon-based company or brand"
+  - "Must have a real corporate website"
+  - "Must have a resolvable CEO/decision-maker with a DIRECT mobile (else dropped)"
+  - "Exclude directories, news, rankings, social profiles, government, NGOs"
+
+buyer_profile:
+  required: true
+  acceptable_titles: ["Owner","Founder","Co-Founder","CEO","Managing Director","General Manager","Chairman","Managing Partner"]
+  reject_titles: ["Receptionist","Coordinator","Assistant","Branch employee"]
+  generic_inbox_policy:
+    rule: "WhatsApp goes to the decision-maker's direct mobile only. No generic/company numbers. No mobile resolved -> drop."
+
+scoring:
+  threshold_qualify: 60
+  threshold_send: 60
+  hard_floor: 50
+  weights: { fit: 40, reachability: 40, buyer: 20 }
+
+run_settings:
+  source_target_raw: 120
+  qualified_target: 40
+  send_cap: 100
+  approval_mode: "full_auto"
+  channels: ["whatsapp"]
+  notes:
+    - "WhatsApp-only: fire.md skips email (Steps 7/8) because channels.json has no 'email'."
+    - "draft_mode=custom -> wa-writer fan-out via draft_whatsapp_custom.py."
+    - "source_agent.txt = source-agent-lb-enterprise."
+    - "No Automate mention, no automatelb.com link, no money talk (enforced in merge)."
+    - "Mr./Mrs. salutation + no em-dashes enforced in merge."

@@ -1,0 +1,11 @@
+{
+  "_comment": "Worldwide AI receptionist pitch. User's exact copy, no signal variation. No em-dashes.",
+
+  "default_vertical": "businesses",
+
+  "subject_template": "Adding bookings to {name} — at zero cost",
+
+  "body_template": "Hi {salutation},\n\nI'd like to help {name} capture the bookings it's currently losing to missed calls — without charging you anything until those bookings actually happen.\n\nWe've built a 24/7 AI employee that doesn't replace anyone on your team. She only picks up the leads that go unanswered. She handles Arabic, French, and English, and books appointments directly into your calendar. Setup is free. There is no monthly fee. We only earn a small commission when she books a paying customer for you.\n\nI'm David Geha at Automate (automatelb.com), AI consultants in Lebanon working with marketing agencies and F&B consulting firms.\n\nAre you free for a 20-minute demo call this week? I'll walk you through exactly how it works.\n\nBest,\nDavid Geha\nAutomate | automatelb.com",
+
+  "wa_body_template": "Hi {salutation},\n\nI'd like to help {name} capture the bookings it's currently losing to missed calls — without charging you anything until those bookings actually happen.\n\nWe've built a 24/7 AI employee that doesn't replace anyone on your team. She only picks up the leads that go unanswered. She handles Arabic, French, and English, and books appointments directly into your calendar. Setup is free. There is no monthly fee. We only earn a small commission when she books a paying customer for you.\n\nI'm David Geha at Automate (automatelb.com), AI consultants in Lebanon working with marketing agencies and F&B consulting firms.\n\nAre you free for a 20-minute demo call this week? I'll walk you through exactly how it works.\n\nBest,\nDavid Geha\nAutomate | automatelb.com"
+}

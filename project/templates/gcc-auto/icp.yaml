@@ -1,0 +1,158 @@
+run_slug: 2026-05-28-gcc-receptionist
+created: 2026-05-28
+
+product:
+  name: "AI Receptionist (overflow + after-hours)"
+  one_liner: "Answers the phone when staff cannot. Books appointments, takes inquiries. Owned system, no platform lock-in. Zero setup fee, commission-only when bookings convert."
+  channels_supported:
+    - phone (PSTN inbound)
+    - WhatsApp inbound
+
+target:
+  description: "GCC big businesses (UAE, Saudi Arabia, Qatar, Bahrain, Kuwait) where the phone is the primary customer channel and inbound call volume is consistently high. The harder the phone is working, the better the fit."
+  geo:
+    countries:
+      - UAE
+      - Saudi Arabia
+      - Qatar
+      - Bahrain
+      - Kuwait
+    cities_focus:
+      - "Dubai, Abu Dhabi, Sharjah, Al Ain, Ras Al Khaimah"
+      - "Riyadh, Jeddah, Dammam, Khobar, Mecca, Medina"
+      - "Doha, Lusail"
+      - "Manama, Riffa"
+      - "Kuwait City, Hawalli, Salmiya"
+  size_signal: "Big businesses — multi-branch operations, private hospitals, hotel groups, multi-brand dealership groups, top-tier law firms. High call volume is the gating signal, not headcount."
+
+  high_call_volume_verticals:
+    - hospital      # private hospitals — switchboard overload, after-hours triage
+    - clinic        # multi-branch polyclinic, dental, dermatology, IVF — appointment-driven
+    - cosmetic      # aesthetic clinics, hair transplant, plastic surgery — high-value phone leads
+    - hotel         # 5-star and resort properties — reservations, concierge, room service 24/7
+    - restaurant    # luxury and high-volume restaurants — reservations + delivery + events
+    - real_estate   # brokerages with luxury and off-plan inventory — every listing generates 20+ calls
+    - auto          # multi-brand dealership groups — sales + service + parts on one line
+    - law           # full-service firms — intake calls ARE the business
+    - insurance     # brokerages — quotes, claims, renewals routed by phone
+    - pharmacy      # multi-branch chains — prescription queries, deliveries
+    - vet           # veterinary chains — emergencies + routine
+    - education     # universities and international schools — admissions calls
+    - fitness       # premium gyms and fitness clubs
+    - salon         # high-end salons and spas — appointment-driven
+
+sources:
+  - web (DuckDuckGo via source-agent-worldwide, filtered to GCC ISO codes)
+
+hard_filters:
+  - "Must operate in AE / SA / QA / BH / KW (countries.txt enforces this in merge_candidates.py)"
+  - "Must have a public website (social-only businesses skip)"
+  - "Must have a visible phone number on the site (this IS the receptionist-pain signal)"
+  - "Must have a decision-maker resolvable from About / team / press / LinkedIn"
+  - "Exclude pure aggregators / directories / news / job listings"
+  - "Exclude embassies, government offices, NGOs"
+  - "Exclude pure online-only e-commerce (no inbound call workflow)"
+  - "Exclude businesses that already advertise an AI receptionist / AI agent (gap closed)"
+
+buyer_profile:
+  required: true
+  acceptable_titles:
+    - "Owner"
+    - "Founder"
+    - "Co-Founder"
+    - "Managing Partner"
+    - "Medical Director"
+    - "Clinic Director"
+    - "General Manager"
+    - "Hotel Manager"
+    - "Sales Director (auto dealerships only)"
+    - "Managing Director / MD"
+    - "CEO"
+    - "Practice Manager (only if score >= 80 and no Owner findable)"
+  reject_titles:
+    - "Receptionist"
+    - "Front-desk staff"
+    - "Marketing Coordinator"
+    - "Branch employee"
+    - "IT support"
+  generic_inbox_policy:
+    rule: "Generic inboxes (info@, contact@, reservations@, bookings@) are DROPPED at draft time per decision-maker-email-required. Stage 5.5 must surface a direct email; otherwise the lead is killed."
+    reason: "Founder / owner / MD only. No generic mailbox fallback."
+
+scoring:
+  threshold_qualify: 70
+  threshold_send: 70
+  hard_floor: 60
+  weights:
+    fit: 25
+    call_volume_pain: 35
+    reachability: 20
+    size_signal: 10
+    buyer: 10
+
+  fit_criteria:
+    - { points: 10, signal: "Operates in a Tier-1 vertical (hospital / multi-branch clinic / cosmetic / hotel)" }
+    - { points: 8,  signal: "Operates in a Tier-2 vertical (real_estate / auto / law / pharmacy / restaurant)" }
+    - { points: 5,  signal: "Operates in a Tier-3 vertical (insurance / vet / education / fitness / salon)" }
+    - { points: 3,  signal: "Visible activity in past 12 months (press / Instagram / new branch)" }
+
+  call_volume_pain_criteria:
+    description: "How clearly does this business need the AI receptionist?"
+    - { points: 14, signal: "Phone number is the primary CTA on the homepage / contact page (no online booking system)" }
+    - { points: 12, signal: "Multi-line / multi-department switchboard (sales + service + parts, or branch-by-branch numbers)" }
+    - { points: 10, signal: "WhatsApp number prominently displayed for inquiries / bookings (manual triage)" }
+    - { points: 10, signal: "Visible 'open 24/7' or 'round-the-clock' messaging — proves after-hours volume exists" }
+    - { points: 8,  signal: "Multi-language site (Arabic + English at minimum) — international call handling implied" }
+    - { points: 8,  signal: "Receptionist / front-desk / call-center job posting visible in past 6 months" }
+    - { points: 7,  signal: "Contact form is the only intake — every form submission still routes to a person" }
+    - { points: 5,  signal: "Press mention of 'overwhelmed staff', 'long wait times', 'high call volume'" }
+
+  reachability_criteria:
+    - { points: 10, signal: "Decision-maker direct email visible on About / team / LinkedIn / press" }
+    - { points: 6,  signal: "Decision-maker LinkedIn findable with name + role (email guessable from pattern, verifiable)" }
+    - { points: 6,  signal: "Decision-maker personal WhatsApp / mobile number publicly listed" }
+    - { points: 4,  signal: "Functional website with real contact details (not Linktree / IG-only)" }
+    - { points: -10, signal: "PENALTY: only generic info@ / contact@ / reservations@ inbox available" }
+
+  size_signal_criteria:
+    description: "Big business signal — multi-branch, multi-property, multi-brand, or established institution."
+    - { points: 6, signal: "3+ branches / outlets / locations visible on website" }
+    - { points: 5, signal: "Featured in top-tier regional press (Khaleej Times, Arab News, Gulf News, The National)" }
+    - { points: 4, signal: "Owns or operates a flagship building / facility (signals scale and capex)" }
+    - { points: 4, signal: "Employs 50+ people (visible from LinkedIn / team page)" }
+    - { points: 3, signal: "Operates across 2+ GCC countries" }
+
+  buyer_criteria:
+    - { points: 8, signal: "Owner / Founder / MD email resolvable and direct (not info@)" }
+    - { points: 4, signal: "Decision-maker name confirmed via About page or press article" }
+    - { points: 2, signal: "Family-owned business with publicly named owner" }
+
+  bonus:
+    - { points: 5, signal: "4.4 star+ rating with 200+ Google reviews (proven foot traffic and call demand)" }
+    - { points: 4, signal: "Public mention of recent expansion / new branch / new doctor partner (growth = more call load)" }
+    - { points: 3, signal: "Already runs Calendly / Setmore / Fresha / Picktime / Doctolib for booking (digital-friendly, AI receptionist plugs in cleanly)" }
+    - { points: 3, signal: "Featured in medical-tourism press (international call demand confirmed)" }
+
+  penalties:
+    - { points: -25, signal: "Already markets an AI receptionist / AI agent / IVR with NLU on their site (gap closed)" }
+    - { points: -20, signal: "Public partnership with a global contact-center / BPO (already outsourced this layer)" }
+    - { points: -15, signal: "Site explicitly states limited hours, no callback workflow, low-traffic small operator" }
+    - { points: -10, signal: "Single solo practitioner with no clinic name, no staff page, no real business identity" }
+    - { points: -10, signal: "Visibly distressed business (closing, bankruptcy filings, layoff press in past 3 months)" }
+
+run_settings:
+  source_target_raw: 250
+  qualified_target: 100
+  send_cap: 200
+  send_cap_reason: "First GCC receptionist run with this fixed template; cap to learn what verticals respond before scaling"
+  warm_up_state: "first_send_to_gcc_with_receptionist_template"
+  approval_mode: "full_auto"
+  channels:
+    - email
+  notes:
+    - "countries.txt = AE/SA/QA/BH/KW; merge_candidates.py drops non-GCC hits."
+    - "source_agent.txt points fire.md to source-agent-worldwide (any-country agent, GCC-filtered downstream)."
+    - "pitch.json overlays draft_emails.py with the user's fixed AI-receptionist template."
+    - "Mr./Mrs. salutation contract enforced via name-finder Stage 5.5."
+    - "No em-dashes or en-dashes in body copy (enforced by _strip_dashes in draft_emails.py)."
+    - "Email only on this run; WhatsApp can be added later via channels.json if desired."

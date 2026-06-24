@@ -1,0 +1,63 @@
+name: worldwide-ai-receptionist
+version: 2
+description: >
+  Businesses worldwide with HIGH inbound call volume where missed calls
+  directly = lost revenue. The AI receptionist solves a real pain point
+  only when the phone is ringing constantly and staff can't keep up.
+
+target:
+  geography: worldwide
+  business_type: high-call-volume service businesses
+  key_filter: >
+    Must show evidence of high inbound call volume — appointment-driven,
+    emergency/urgent services, multi-line operations, or industries where
+    phone is the only booking channel.
+
+  high_call_volume_verticals:
+    - dental           # appointment scheduling is almost entirely phone-based
+    - cosmetic         # consultations booked by phone, high-value leads lost to voicemail
+    - clinic           # patient scheduling, referrals, lab results — constant call flow
+    - hospital         # switchboard overwhelm, after-hours triage
+    - vet              # emergencies + routine appointments, emotional callers won't leave voicemail
+    - hotel            # reservations, concierge, room service — 24/7 call demand
+    - real_estate      # every listing generates dozens of inquiry calls
+    - auto             # service appointments, parts inquiries, sales — 3 departments on one line
+    - law              # intake calls are the business — every missed call is a missed case
+    - insurance        # quotes, claims, renewals — phone is still #1 channel
+    - hvac             # emergency calls (AC down, pipe burst) — caller won't wait for callback
+    - plumbing         # same as HVAC — urgent, won't leave voicemail
+    - pest_control     # urgent ("there's a rat"), seasonal spikes overwhelm staff
+    - salon            # appointment booking is 90% phone, walk-ins fill gaps
+    - fitness          # membership inquiries, class bookings
+    - restaurant       # reservations, takeout orders, event inquiries
+    - therapy          # intake calls, insurance verification, scheduling
+    - accounting       # seasonal tax rush = phone overload for months
+
+scoring:
+  min_score: 70
+  primary_signal: call_volume_evidence
+  signals:
+    no_online_booking:
+      weight: 30
+      description: No self-serve booking — ALL appointments go through phone/person
+    phone_primary_cta:
+      weight: 25
+      description: "Call us" is the main CTA, phone number displayed prominently
+    emergency_or_urgent:
+      weight: 25
+      description: Business handles urgent/emergency requests (HVAC, vet, medical)
+    multi_department:
+      weight: 20
+      description: Multiple departments sharing phone lines (sales + service + parts)
+    after_hours_demand:
+      weight: 20
+      description: Business serves customers across time zones or has 24/7 need
+    high_review_count:
+      weight: 10
+      description: High review count = high foot traffic = high call volume
+
+  disqualifiers:
+    - has_modern_online_booking  # already solved the problem
+    - enterprise_with_call_center  # already has staffed phone ops
+    - pure_online_ecommerce  # no phone-led customer flow
+    - government_ngo

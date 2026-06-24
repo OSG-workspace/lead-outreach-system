@@ -1,0 +1,22 @@
+{
+  "_comment": "EU hotels AI-receptionist pitch (Spain incl. Mallorca, Italy, France). Fixed copy, no signal variation. Money/commission wording is intentional (the hook). No em-dashes. Renders through email_template.py at send.",
+
+  "country_names": {
+    "ES": "Spain",
+    "IT": "Italy",
+    "FR": "France"
+  },
+
+  "vertical_names": {
+    "hotel": "hotels and boutique resorts",
+    "resort": "resorts",
+    "bnb": "guesthouses and B&Bs",
+    "guesthouse": "guesthouses"
+  },
+
+  "default_vertical": "hotels",
+
+  "subject_template": "Adding bookings to {name}, at zero cost",
+
+  "body_template": "Hi {salutation},\n\nI'd like to help {name} capture the bookings it is currently losing to missed calls, without charging you anything until those bookings actually happen.\n\nWe have built a 24/7 AI receptionist that does not replace anyone at your front desk. She only picks up the calls that go unanswered, after hours, during the breakfast rush, or when reception is already on another line. She speaks English, Spanish, Italian, French, and German, answers room and rate questions, and books reservations straight into your system. Setup is free. There is no monthly fee. We only earn a small commission when she books a paying guest for you.\n\nI am David Geha at Automate (automatelb.com), AI consultants working with hospitality businesses across Europe.\n\nAre you free for a 20-minute demo call this week? I will walk you through exactly how it works.\n\nBest,\nDavid Geha\nAutomate, automatelb.com"
+}

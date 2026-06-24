@@ -1,0 +1,5 @@
+{
+  "_comment": "EU hotels: only BIG, high-call-volume properties qualify. A hotel lead must show a size/volume signal (room count, 4-5 star, or resort/spa/conference scale) detected from its own site at extract. Small B&Bs and quiet guesthouses are dropped before any enrichment agent runs. Non-generic decision-maker email is enforced separately at Stage 5.5.",
+  "require_hotel_size_volume": true,
+  "min_hotel_volume": "medium"
+}

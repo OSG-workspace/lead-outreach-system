@@ -1,0 +1,37 @@
+# EU Hotels — AI Receptionist campaign (Spain incl. Mallorca, Italy, France)
+name: eu-hotels-receptionist
+channel: email
+draft_mode: template          # fixed AI-receptionist pitch via pitch.json
+source_agent: source-agent-worldwide
+countries: [ES, IT, FR]
+
+target:
+  vertical: hotels
+  regions:
+    - Spain (mainland + Mallorca / Balearics)
+    - Italy
+    - France
+  # QUALIFIED CLIENT = a BIG hotel with HIGH call volume. Small B&Bs and
+  # quiet guesthouses are NOT the target — they don't have the missed-call
+  # problem the AI receptionist solves.
+  must_be:
+    - large property (4-5 star, resort, spa, or conference hotel; many rooms)
+    - high call volume / phone-led direct booking (reception is a bottleneck)
+    - reachable at a direct, non-generic decision-maker email (GM / owner /
+      revenue or front-office manager) — generic info@/reservations@ is dropped
+  exclude:
+    - small B&Bs, single-room guesthouses, low-traffic rural lodgings
+    - chains with a staffed central call center (already solved with people)
+    - properties whose only booking path is a modern self-serve engine with no
+      phone bottleneck
+
+pitch: AI receptionist for overflow + after-hours calls. 24/7, multilingual
+  (EN/ES/IT/FR/DE), books reservations into the system. Zero setup, commission
+  only. Fixed copy in pitch.json (no per-lead variation).
+
+qualification:
+  # Enforced in the chain (Stage 5.3 qualify gate), not just by queries:
+  size_volume_gate: true        # hotel leads must show a big/high-volume signal
+  min_score: 82
+  non_generic_email_required: true   # enforced at Stage 5.5 enrichment
+  cap: 80                       # ENRICH_MAX_LEADS — top-N by fit into enrichment

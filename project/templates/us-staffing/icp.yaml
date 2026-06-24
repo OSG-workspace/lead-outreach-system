@@ -1,0 +1,19 @@
+icp_name: US Staffing & Recruiting Agencies — Inbox & Scheduling Automation
+description: >
+  Small US staffing/recruiting agencies (under ~50 people) where the work itself
+  is inbox + scheduling: candidate follow-ups, interview coordination, status
+  emails. Custom gap-based emails (gap-writer). No money talk; keep the
+  David Geha / Automate, automatelb.com link. See vault/lead-outreach/targeting/.
+geography: US
+country_filter: US
+vertical: staffing
+scoring: { qualify_threshold: 70, send_threshold: 70 }
+target_person: [agency owner, head of recruiting, managing director]
+firm_size: "under 50 people"
+signals:
+  positive: [manual_candidate_followup, interview_coordination_email, resume_form_no_scheduling, shared_inbox_visible]
+  negative: [modern_booking]
+draft_mode: custom
+no_emdash: true
+no_money_talk: true
+keep_signature_link: true

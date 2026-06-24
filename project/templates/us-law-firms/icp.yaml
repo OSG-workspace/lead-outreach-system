@@ -1,0 +1,41 @@
+icp_name: US Small Law Firms — Inbox & Scheduling Automation
+description: >
+  Small US law firms (2-20 attorneys) that handle new-client intake, consult
+  booking, and follow-ups manually. Offer: an AI assistant (Automate, David Geha)
+  that quietly removes that repetitive inbox/scheduling work. Every email is
+  custom-written per firm around its specific gap. No money talk in the email.
+  See vault/lead-outreach/targeting/us-inbox-scheduling.md (+ .OVERRIDES.md).
+
+geography: US            # countries.txt = US enforces the filter
+country_filter: US
+vertical: law            # this run targets ONE vertical (see vertical.txt)
+
+# NOTE: extract_leads.py scoring is hardcoded (person 90 / role 82 / personal 78
+# + branch bonus); this block documents intent. The draft stage is custom
+# (draft_mode.txt = custom) so the gap-writer agent does per-firm gap-finding.
+scoring:
+  qualify_threshold: 70
+  send_threshold: 70
+
+target_person:
+  - managing partner
+  - office manager
+  - operations manager
+firm_size_attorneys: "2-20"
+
+# Buying signals the gap-writer should look for on each firm's site.
+signals:
+  positive:
+    - manual_intake_email
+    - contact_form_only
+    - phone_led_intake
+    - shared_inbox_visible          # info@ / office@ on contact page
+    - no_online_scheduling
+    - hiring_intake_or_admin_role   # job posting => overloaded
+  negative:
+    - modern_booking                # already has Calendly/etc => skip (gap solved)
+
+draft_mode: custom        # gap-writer agent, NOT the template draft_emails.py
+no_emdash: true
+no_money_talk: true       # never mention price/fee/retainer/commission in copy
+keep_signature_link: true # David Geha / Automate, automatelb.com in every email
