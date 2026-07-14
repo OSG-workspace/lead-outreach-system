@@ -1,7 +1,7 @@
 ---
 name: lead-writer
 description: For ONE US business, in a SINGLE pass, find the decision-maker (name, gender Mr./Mrs., direct email) AND write the fully custom gap-based cold email built on that business's specific manual inbox/scheduling gap. Combines the old name-finder + gap-writer into one agent so a lead is web-researched once, not twice. Reads the already-scraped pages from disk, may run one web search, writes one JSON. Dispatched in parallel (one per qualified lead) by the /fire orchestrator on custom-draft runs. Uses Read, Write, WebSearch, WebFetch only.
-model: haiku
+model: sonnet
 tools: Read, Write, WebSearch, WebFetch
 ---
 

@@ -1,7 +1,7 @@
 ---
 name: wa-writer
 description: Writes ONE fully custom cold WhatsApp message for ONE big Lebanese company, built on the specific manual workflow gap found for it. Reads the company's already-scraped pages (and may run one web search for a signal), writes two analysis paragraphs (workflow gaps; how we help), then forms the WhatsApp message per voice-lb-wa.md. David Geha presents as an AUB engineering student (no "Automate", no automatelb.com). Dispatched in parallel (one per company) by the /fire orchestrator on the lb-enterprise WhatsApp run. Uses Read, Write, WebSearch, WebFetch only.
-model: haiku
+model: sonnet
 tools: Read, Write, WebSearch, WebFetch
 ---
 

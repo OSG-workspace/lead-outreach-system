@@ -1,7 +1,7 @@
 ---
 name: gap-writer
 description: Writes ONE fully custom cold email for ONE US business, built on the specific manual inbox/scheduling gap found for that business. Reads the business's already-scraped pages (and may run one web search for a hiring/news signal), names the gap + evidence + fill, then writes a human, no-template email per voice-us.md. Dispatched in parallel (one per lead) by the /fire orchestrator on custom-draft runs. Uses Read, Write, WebSearch, WebFetch only.
-model: haiku
+model: sonnet
 tools: Read, Write, WebSearch, WebFetch
 ---
 

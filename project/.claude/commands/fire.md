@@ -338,7 +338,7 @@ echo "Will dispatch $LEAD_BATCHES parallel lead-writer sub-agents."
 Then **issue the `Agent` tool calls FOREGROUND, up to 50 per assistant message**,
 one per `lead-batch-NNN.txt`. Same dispatch economics as Step 3 — never set
 `run_in_background`. Each call: **subagent_type** `lead-writer`, **model**
-`haiku`, **prompt** = the contents of `lead-batch-NNN.txt` verbatim. Do NOT inline
+`sonnet` (writer agents are Sonnet for copy quality), **prompt** = the contents of `lead-batch-NNN.txt` verbatim. Do NOT inline
 the lead-writer instructions — they live in `.claude/agents/lead-writer.md`.
 
 ```bash
@@ -474,7 +474,7 @@ one per `gap-batch-NNN.txt`. Same dispatch economics as Step 3 / Step 6.5:
 never set `run_in_background`. Each call:
 
 - **subagent_type**: `gap-writer`
-- **model**: `haiku`
+- **model**: `sonnet` (writer agents are Sonnet for copy quality)
 - **run_in_background**: omit it (foreground)
 - **prompt**: the contents of `gap-batch-NNN.txt` verbatim.
 
@@ -544,7 +544,7 @@ echo "Will dispatch $WA_BATCHES parallel wa-writer sub-agents."
 
 Then issue the `Agent` tool calls FOREGROUND, up to 50 per assistant message, one per
 `wa-batch-NNN.txt`. Same dispatch economics as Step 3 / Step 6.5 — never set
-`run_in_background`. Each call: **subagent_type** `wa-writer`, **model** `haiku`,
+`run_in_background`. Each call: **subagent_type** `wa-writer`, **model** `sonnet`,
 **prompt** = the contents of `wa-batch-NNN.txt` verbatim. Do NOT inline the wa-writer
 instructions — they live in `.claude/agents/wa-writer.md` and load automatically.
 

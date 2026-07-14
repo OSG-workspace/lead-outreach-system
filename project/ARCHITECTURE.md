@@ -83,7 +83,7 @@ Both run the **identical** Haiku sub-agents (same definitions/tools/model) and t
 
 ## 2. Agent roster — who deploys, with which tools, how many
 
-All sub-agents are **Haiku**, dispatched **foreground**, **≤50 Agent calls per assistant message** (never `run_in_background` — that re-reads the orchestrator context per completion and burns the usage limit).
+Sub-agents: sourcing + name-finder are **Haiku** (high-volume lookup work); the three writers (`lead-writer`, `gap-writer`, `wa-writer`) are **Sonnet** (low-volume, copy-quality-critical). All dispatched **foreground**, **≤50 Agent calls per assistant message** (never `run_in_background` — that re-reads the orchestrator context per completion and burns the usage limit).
 
 | Agent | Tools (exact) | Stage | Deployed when | How many |
 |---|---|---|---|---|
