@@ -25,6 +25,17 @@ A fixture must contain at least `icp.yaml` + `queries.txt`. Other control files
 `pitch.json`, `qualify.json`, `targeting.md`, `brief.md`, `enrich_cap.txt`) are
 copied if present. The routing phrase → fixture map lives in `../CLAUDE.md`.
 
+## Query rotation (keeping lead volume up)
+
+Every fire drops previously-contacted domains (forever) and recently-sourced
+domains (90-day window, `SOURCED_SKIP_DAYS`). A fixed `queries.txt` re-fired on
+the same campaign therefore yields FEWER fresh candidates each time — DuckDuckGo
+returns roughly the same top results for the same query. When the merge stage
+warns that >50% of candidates were already sourced, **rotate the fixture's
+queries**: new cities/regions, new sub-vertical phrasings, different qualifiers.
+Evidence this works: the 2026-06-24 eu-hotels retries overlapped 42-46% on the
+same queries, and dropped to 5% overlap once queries were diversified.
+
 ## Template-first rule (new campaigns)
 
 A **new campaign fixture is not fire-ready until its email copy is

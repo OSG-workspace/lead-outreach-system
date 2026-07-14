@@ -114,18 +114,41 @@ def sourced_log_path(sent_log: Path) -> Path:
 
 
 def load_sourced_domains(sourced_log: Path, current_run: str) -> set[str]:
-    """Domains any PREVIOUS run already sourced (rows for the current run are
-    ignored so re-running the merge stage never blocks its own run).
-    Line format: `domain|YYYY-MM-DD|run-slug`. SOURCED_SKIP=off disables."""
+    """Domains a PREVIOUS run sourced within the freshness window (rows for the
+    current run are ignored so re-running the merge stage never blocks itself).
+
+    Two-tier freshness policy:
+      * CONTACTED domains are blocked forever — but by the sent-log nets, not here.
+      * Sourced-but-never-contacted domains are blocked for SOURCED_SKIP_DAYS
+        (default 90). After the window they become eligible again: they were
+        never reached (most died in the old low-yield enrichment), so retrying
+        them with the hardened enrichment grows the pool instead of shrinking
+        it — 9,754 of 12,204 ledgered domains were never contacted.
+    Line format: `domain|YYYY-MM-DD|run-slug`.
+    SOURCED_SKIP=off disables; SOURCED_SKIP_DAYS=forever blocks permanently."""
     if os.environ.get("SOURCED_SKIP", "").lower() in {"off", "0", "no"}:
         return set()
     if not sourced_log.exists():
         return set()
+    window_raw = os.environ.get("SOURCED_SKIP_DAYS", "90").lower()
+    forever = window_raw in {"forever", "all", "inf"}
+    try:
+        window_days = 0 if forever else int(window_raw)
+    except ValueError:
+        window_days = 90
+    today = date.today()
     domains: set[str] = set()
     for line in sourced_log.read_text().splitlines():
         parts = line.strip().split("|")
         if len(parts) < 3 or parts[2] == current_run:
             continue
+        if not forever:
+            try:
+                age = (today - date.fromisoformat(parts[1])).days
+            except ValueError:
+                age = 0
+            if age > window_days:
+                continue
         domains.add(_norm_domain(parts[0]))
     return domains
 
@@ -181,6 +204,12 @@ def merge(run_dir: Path, sent_log: Path) -> list[str]:
     if dropped_sent or dropped_sourced:
         print(f"Dedup: dropped {dropped_sent} previously-contacted, "
               f"{dropped_sourced} previously-sourced domains.")
+    total_unique = len(rows) + dropped_sent + dropped_sourced
+    if total_unique and dropped_sourced / total_unique > 0.5:
+        print(f"WARN: {dropped_sourced}/{total_unique} unique candidates were already "
+              f"sourced by recent runs — the campaign's queries are going STALE. "
+              f"Rotate/expand queries.txt in the template fixture (new cities, "
+              f"sub-verticals, phrasings) to keep surfacing fresh leads.")
     return rows
 
 

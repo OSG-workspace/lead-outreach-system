@@ -149,7 +149,7 @@ All sub-agents are **Haiku**, dispatched **foreground**, **≤50 Agent calls per
 | Rule | Value | Enforced in |
 |---|---|---|
 | Never re-contact a `sent-log.md` email | email-domain + `[[slug]]` + `dom@` tokens at merge; email-level at extract; **send-time suppression net** (sent-log + bounce-list) | `merge_candidates.py`, `extract_leads.py`, `send_batch_brevo.py` |
-| **Fresh leads only, every fire** | any domain a previous run sourced is skipped (ledger: `vault/lead-outreach/sourced-log.txt`; `SOURCED_SKIP=off` overrides) | `merge_candidates.py` |
+| **Fresh leads only, every fire** | contacted domains blocked FOREVER (sent-log nets); sourced-but-never-contacted blocked for **90 days** (`SOURCED_SKIP_DAYS`, ledger: `vault/lead-outreach/sourced-log.txt`) then eligible for retry; `SOURCED_SKIP=off` disables; merge WARNs to rotate queries when >50% of candidates are stale | `merge_candidates.py` |
 | Bounce/block/spam/unsub = dead-letter forever | synced from Brevo events into `bounce-list.md` before every live send | `sync_brevo_events.py`, `send_batch_brevo.py` |
 | Constructed emails need URL evidence + live domain | `pattern_inferred`/`reconstructed` without an http(s) `email_source_url` are dropped; every contact domain must have MX/A; constructed ⇒ confidence ≤ medium | `enrich_contact_person.py` |
 | Degraded fan-out = halt | enrich outputs < 60% of batches (`ENRICH_MIN_COMPLETION`) or >30% dispatch failures ⇒ ABORT | `enrich_contact_person.py`, `run_fire.py` |
