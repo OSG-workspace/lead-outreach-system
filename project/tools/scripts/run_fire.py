@@ -55,6 +55,30 @@ def read_cfg(run: Path, name: str, default: str = "") -> str:
     return p.read_text().strip() if p.exists() else default
 
 
+def cleanup_run_artifacts(run: Path):
+    """After a successful send+persist, drop the bulky intermediates that have
+    no post-run consumer: raw_html (was 28 GB across 58 old runs) and the
+    per-agent batch/out files (hundreds per run). The merged/final artifacts
+    (candidates-all, leads-*, emails-*, send logs) are kept for auditability.
+    Set KEEP_RUN_ARTIFACTS=1 to skip (e.g. when debugging a stage)."""
+    if PLAN or os.environ.get("KEEP_RUN_ARTIFACTS") == "1":
+        return
+    import shutil
+    removed = 0
+    raw = run / "raw_html"
+    if raw.is_dir():
+        shutil.rmtree(raw, ignore_errors=True)
+        removed += 1
+    for pat in ("candidates-batch-*.txt", "queries-batch-*", "enrich-batch-*.txt",
+                "enrich-out-*.json", "lead-batch-*.txt", "lead-out-*.json",
+                "gap-batch-*.txt", "gap-out-*.json", "wa-batch-*.txt", "wa-out-*.json"):
+        for f in run.glob(pat):
+            f.unlink(missing_ok=True)
+            removed += 1
+    print(f"  cleanup: removed raw_html + {removed - 1 if removed else 0} intermediate files "
+          f"(KEEP_RUN_ARTIFACTS=1 to keep).")
+
+
 def count_lines(p: Path) -> int:
     return sum(1 for ln in p.read_text().splitlines() if ln.strip()) if p.exists() else 0
 
@@ -78,11 +102,15 @@ def fan_out(agent: str, prompts: list[str], stage: str, max_workers: int, timeou
                            cwd=str(ad.REPO), on_done=_cb)
     fails = [i for i, (rc, _o, _e) in enumerate(res) if rc != 0]
     if fails:
-        # A few sub-agent failures are tolerable (the merge stage drops them); a
-        # wholesale failure means the dispatch mechanism is broken -> abort.
+        # A few sub-agent failures are tolerable (the merge stage drops them),
+        # but a large partial fan-out is a DEGRADED run — kill-on-fallback.
+        # (2026-06-25-eu-hotels shipped with 24/94 enrich agents completed;
+        # that must halt, not send a fraction of the campaign.)
+        frac = len(fails) / len(prompts)
         print(f"  WARNING: {len(fails)}/{len(prompts)} {agent} dispatches returned non-zero.")
-        if len(fails) == len(prompts):
-            die(stage, f"ALL {len(prompts)} {agent} sub-agents failed (dispatch broken).", 2)
+        if frac > 0.3:
+            die(stage, f"{len(fails)}/{len(prompts)} {agent} sub-agents failed "
+                       f"(>{0.3:.0%} — degraded fan-out, kill-on-fallback).", 2)
     return res
 
 
@@ -208,6 +236,10 @@ def main():
 
     # --- Step 8: send + persist (email) ---
     if email_on and not a.dry_run:
+        # Refresh the dead-letter suppression list from Brevo FIRST — sending
+        # while the bounce-list is stale re-mails known-dead addresses and
+        # burns sender reputation. Aborts the run if Brevo is unreachable.
+        sh(["python3", "tools/scripts/sync_brevo_events.py"], "Stage 7 bounce-sync")
         cap = os.environ.get("MAX_EMAILS_PER_RUN", "1000")
         sh(["python3", "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
             "--send", "--cap", cap], "Stage 7 send")
@@ -228,10 +260,17 @@ def main():
                 "--run-dir", str(run)], "Stage 8.5 WA merge")
             if not a.dry_run:
                 sh(["node", "bridge/send_campaign.js", "--run-dir", str(run)], "Stage 8.5 WA send")
+                # WhatsApp sends must land in the sent-log too (idempotent —
+                # previously a WhatsApp-ONLY run never persisted at all).
+                sh(["python3", "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
+                    "--sent-log", SENT_LOG], "Stage 8.5 WA persist")
             else:
                 print("[DRY-RUN] WhatsApp drafts written; send skipped.")
         else:
             print("  no WhatsApp drafts (no CEO mobile); skipping WA send.")
+
+    if not a.dry_run:
+        cleanup_run_artifacts(run)
 
     print(f"\nDONE: {a.slug} — qualified={qualified} drafted={drafted} "
           f"{'(dry-run, nothing sent)' if a.dry_run else 'sent+persisted'}")

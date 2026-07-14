@@ -117,8 +117,8 @@ def draft(lead: dict) -> dict:
 
     salutation = f"{lead['contact_title']} {lead['contact_last_name']}"
     fmt = dict(name=name, country=country, vertical=vertical, salutation=salutation, opener=opener)
-    subject = SUBJECT_TEMPLATE.format_map(fmt)
-    body_text = BODY_TEMPLATE.format_map(fmt)
+    subject = _strip_dashes(SUBJECT_TEMPLATE.format_map(fmt))
+    body_text = _strip_dashes(BODY_TEMPLATE.format_map(fmt))
 
     paragraphs = body_text.strip().split("\n\n")
     body_html = "\n".join(f"<p>{p.replace(chr(10),'<br>')}</p>" for p in paragraphs)

@@ -69,8 +69,37 @@ Every value above is a real folder under `templates/`. To change a campaign's qu
 - **NO target at all** (bare "fire run" / "fire it" / "go" / "ship it") → **DO NOT
   default. ASK first** via `AskUserQuestion`: which campaign? (US [then which vertical] ·
   GCC consumer chains · Lebanon · Worldwide · a new vertical). If they pick a brand-new
-  vertical with no template yet, ask the 1-2 details needed (region + vertical) and tell
-  them you'll set it up before firing. Only after they answer → Step 2.
+  vertical with no template yet, follow the **new-campaign contract** below before firing.
+  Only after they answer → Step 2.
+
+### New-campaign contract (TEMPLATE-FIRST — non-negotiable)
+
+The system must **never invent email copy at fire time**. Freeform generation
+during outreach produces generic emails and is the #1 quality risk. So when the
+user asks for a **new campaign kind** (a vertical/region with no `templates/<base>/`
+folder yet), set it up in THIS order, before any optimizing of queries/ICP:
+
+1. **Ask for their email template first.** "Do you already have the email you
+   want this campaign to send?" If yes → store it verbatim as
+   `templates/<base>/pitch.json` (`subject_template` + `body_template`, slots
+   `{salutation}` `{name}` and optionally `{opener}` `{vertical}` `{country}`),
+   exactly like the AI-receptionist campaigns (`eu-hotels`, `lb-receptionist`).
+2. **If they have none → draft 2-3 example templates** (different angles for
+   their vertical) and present them via `AskUserQuestion` for a choice. The
+   examples must be non-generic and human: no em/en dashes, no banned words
+   (see `vault/lead-outreach/voice-us.md`), evidence-shaped opener, one CTA,
+   one link. **Never wire a template the user has not confirmed.**
+3. **Always offer refinement** after they pick: apply their word changes to the
+   chosen template before saving it. The saved `pitch.json` is then FIXED copy.
+4. **Per-business variation happens ONLY through template slots**, never by
+   rewriting the email: the `{opener}` slot + `signal_openers` map in
+   `pitch.json` lets a few words vary with the specific business's detected
+   flaw (phone-led, contact form, no online booking, …) while the rest of the
+   approved copy stays byte-identical. Offer this as an option when saving.
+5. **`draft_mode=template` is the default for every new campaign.** The
+   freeform per-business path (`draft_mode=custom`, lead-writer/gap-writer) is
+   opt-in ONLY when the user explicitly asks for fully custom emails, and its
+   voice contract (`voice-us.md`) + merge gates stay mandatory.
 
 ### Step 2 — clone the FIXED template fixture into a new dated folder, then fire
 
@@ -150,19 +179,12 @@ Long-term memory (sent history, voice, ICP) lives in the ONE canonical vault at 
 
 ## The pipeline
 
-```
-1. Brief intake     → user states "find me [target], pitch on [gap]"
-2. ICP definition   → icp-definition skill formalizes brief into scoring rubric
-3. Sourcing         → free local tools pull raw leads
-4. Dedup            → cross-check against vault/lead-outreach/sent-log.md
-5. Scoring          → lead-scoring skill assigns 0-100 to each lead
-6. Gap analysis     → business-gap-analysis skill researches qualified leads
-7. Copywriting      → outreach-copywriting skill drafts personalized emails
-8. Send             → brevo-send skill ships via Brevo MCP
-9. Persist          → obsidian-memory writes everything back to vault
-```
-
-The `pipeline-orchestrator` skill runs this end-to-end.
+The live pipeline is the /fire path documented in `ARCHITECTURE.md` §3:
+source fan-out → merge+dedup (sent-log + sourced-log freshness) → fetch →
+extract → qualify+cap → enrich decision-maker → draft (template or custom) →
+bounce-sync + Brevo batch send → persist → cleanup. The old skills-era
+9-step pipeline (icp-definition / lead-scoring / pipeline-orchestrator
+skills) is retired — those skills are archived and must not be invoked.
 
 ## The free sourcing stack
 

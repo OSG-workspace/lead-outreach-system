@@ -20,7 +20,11 @@ Two phases, both run by the /fire orchestrator:
 """
 from __future__ import annotations
 import argparse
+import functools
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -148,11 +152,46 @@ def phase_prep() -> None:
     print(f"Dispatch this many parallel name-finder Haiku agents from the orchestrator.")
 
 
+@functools.lru_cache(maxsize=None)
+def domain_accepts_mail(domain: str) -> bool:
+    """Free DNS-level deliverability check: a domain with no MX and no A record
+    cannot receive mail — every send to it is a guaranteed hard bounce (this is
+    what let invented domains like @kimptonatlantico.com ship). Uses `dig`;
+    if dig is unavailable the check passes open (never blocks a run on tooling)."""
+    if shutil.which("dig") is None:
+        return True
+    for rtype in ("MX", "A"):
+        try:
+            r = subprocess.run(["dig", "+short", "+time=3", "+tries=1", rtype, domain],
+                               capture_output=True, text=True, timeout=8)
+            if r.stdout.strip():
+                return True
+        except Exception:
+            return True  # resolver trouble: pass open, don't kill the run on infra
+    return False
+
+
+CONSTRUCTED_BASES = {"pattern_inferred", "reconstructed_from_mask"}
+
+
 def phase_merge() -> None:
     """Read enrich-out-*.json, join to leads-extracted.json, drop leads with
     no name+gender, write leads-with-contact.json."""
     leads = load_leads()
     by_id = {l["lead_id"]: l for l in leads}
+
+    # --- fan-out completion guard (kill-on-fallback) ---------------------
+    # 2026-06-25-eu-hotels prepped 94 batches, only 24 agents ever wrote an
+    # output, and the run shipped 15 sends as if nothing was wrong. A partial
+    # fan-out is a degraded run: halt instead of silently sending a fraction.
+    n_batches = len(list(ROOT.glob("enrich-batch-*.txt")))
+    n_outs = len(list(ROOT.glob("enrich-out-*.json")))
+    min_completion = float(os.environ.get("ENRICH_MIN_COMPLETION", "0.6"))
+    if n_batches and n_outs / n_batches < min_completion:
+        print(f"ABORT: enrichment fan-out incomplete — {n_outs}/{n_batches} agent outputs "
+              f"(<{min_completion:.0%}). A degraded run must not ship (kill-on-fallback). "
+              f"Re-dispatch the missing agents or re-fire; ENRICH_MIN_COMPLETION overrides.")
+        raise SystemExit(7)
 
     enriched = {}
     out_files = sorted(ROOT.glob("enrich-out-*.json"))
@@ -233,6 +272,8 @@ def phase_merge() -> None:
     dropped_no_match = 0
     dropped_no_email = 0
     dropped_business_as_surname = 0
+    dropped_no_evidence_url = 0
+    dropped_dead_domain = 0
 
     for lead in leads:
         result = enriched.get(lead["lead_id"])
@@ -251,6 +292,22 @@ def phase_merge() -> None:
         email = (result.get("email") or "").strip().lower()
         if not is_direct_email(email):
             dropped_no_email += 1
+            continue
+        basis = (result.get("email_basis") or "").strip()
+        evidence_url = (result.get("email_source_url") or result.get("source_url") or "").strip()
+        if basis in CONSTRUCTED_BASES:
+            # A constructed address needs REAL, auditable format evidence — a URL,
+            # not prose ("RocketReach analysis suggests 93.8%…"). Constructed
+            # addresses were 66% of sends and drove the 21% hard-bounce rate.
+            if not evidence_url.lower().startswith(("http://", "https://")):
+                dropped_no_evidence_url += 1
+                continue
+            # The spec caps reconstructed addresses at medium confidence.
+            if (result.get("confidence") or "").strip() == "high":
+                result["confidence"] = "medium"
+        # DNS gate: the recipient domain must actually accept mail (MX or A).
+        if not domain_accepts_mail(email.split("@", 1)[1]):
+            dropped_dead_domain += 1
             continue
         phone = (result.get("phone") or "").strip()
         # Strip everything but digits, then re-prefix `+` for storage. Empty stays empty.
@@ -285,6 +342,8 @@ def phase_merge() -> None:
     print(f"  dropped name-or-gender-missing:  {dropped_no_name}")
     print(f"  dropped business-name-as-surname: {dropped_business_as_surname}")
     print(f"  dropped no-direct-email:         {dropped_no_email}")
+    print(f"  dropped constructed-no-URL-evidence: {dropped_no_evidence_url}")
+    print(f"  dropped dead-domain (no MX/A):   {dropped_dead_domain}")
     print(f"  enrich-out parse errors:         {parse_errors}")
     print(f"Wrote {WITH_CONTACT}")
     if not survivors:

@@ -22,6 +22,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -30,6 +31,45 @@ from urllib import error, request
 
 BREVO_BATCH_MAX = 1000  # hard ceiling from Brevo for messageVersions per request
 BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
+
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+
+def load_suppression(project_root: Path) -> tuple[set[str], set[str]]:
+    """Send-time suppression net (the LAST line of defense; upstream dedup can
+    miss when the enriched contact email differs from anything previously seen).
+
+    Returns (suppressed_emails, suppressed_domains):
+      * every address ever logged in sent-log.md  -> never email twice
+      * every address/domain in bounce-list.md    -> hard bounces, Brevo blocks,
+        spam complaints, unsubscribes are dead-letter forever
+    """
+    emails: set[str] = set()
+    domains: set[str] = set()
+    sent_log = project_root / "vault" / "lead-outreach" / "sent-log.md"
+    if sent_log.exists():
+        for line in sent_log.read_text().splitlines():
+            for m in EMAIL_RE.finditer(line):
+                e = m.group(0).lower()
+                if "smtp-relay" in e or "mailin.fr" in e:
+                    continue
+                emails.add(e)
+    bounce_list = project_root / "vault" / "lead-outreach" / "bounce-list.md"
+    if bounce_list.exists():
+        for line in bounce_list.read_text().splitlines():
+            s = line.strip()
+            if not s or s.startswith(("#", ">", "-", "`")):
+                continue
+            found = False
+            for m in EMAIL_RE.finditer(s):
+                emails.add(m.group(0).lower())
+                found = True
+            if not found:
+                # bare-domain entry: `<date> | example.com | reason | run`
+                parts = [p.strip().lower() for p in s.split("|")]
+                if len(parts) >= 2 and "." in parts[1] and " " not in parts[1]:
+                    domains.add(parts[1])
+    return emails, domains
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -60,13 +100,13 @@ def chunked(seq, size):
         yield seq[i:i + size]
 
 
-def build_version(draft: dict) -> dict:
+def build_version(draft: dict, sender_address: str = "") -> dict:
     # Every email renders through the shared professional shell (signature +
     # footer component). Falls back to the drafter's bare body_html only if the
     # template module is unavailable, so a send is never blocked on it.
     try:
         from email_template import render_html
-        html = render_html(draft["body_text"])
+        html = render_html(draft["body_text"], address=sender_address)
     except Exception:
         html = draft["body_html"]
     return {
@@ -150,13 +190,22 @@ def main() -> None:
 
     drafts = [json.loads(l) for l in drafts_path.read_text().splitlines() if l.strip()]
 
+    sup_emails, sup_domains = load_suppression(project_root)
     seen, unique = set(), []
+    suppressed = 0
     for d in drafts:
-        e = d["to_email"].lower()
+        e = d["to_email"].strip().lower()
+        dom = e.split("@", 1)[1] if "@" in e else ""
+        if e in sup_emails or dom in sup_domains:
+            suppressed += 1
+            continue
         if e in seen:
             continue
         seen.add(e)
         unique.append(d)
+    if suppressed:
+        print(f"SUPPRESSED {suppressed} draft(s): already in sent-log or bounce-list "
+              f"(never re-contact / dead-letter).")
     drafts = unique[: args.cap]
 
     if not drafts:
@@ -169,8 +218,9 @@ def main() -> None:
 
     rows: list[dict] = []
     with out_path.open("w") as out_f, log_path.open("w") as log_f:
+        sender_address = env.get("BREVO_SENDER_ADDRESS", "")  # CAN-SPAM physical address (set in .env)
         for chunk_idx, chunk in enumerate(chunked(drafts, args.batch_size), start=1):
-            versions = [build_version(d) for d in chunk]
+            versions = [build_version(d, sender_address) for d in chunk]
             run_tag = run_dir.name
             common_tags = list({t for d in chunk for t in d.get("tags", [])} | {"cold-outreach", run_tag})
 

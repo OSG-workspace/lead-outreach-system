@@ -24,3 +24,14 @@ A fixture must contain at least `icp.yaml` + `queries.txt`. Other control files
 (`source_agent.txt`, `draft_mode.txt`, `channels.json`, `countries.txt`,
 `pitch.json`, `qualify.json`, `targeting.md`, `brief.md`, `enrich_cap.txt`) are
 copied if present. The routing phrase → fixture map lives in `../CLAUDE.md`.
+
+## Template-first rule (new campaigns)
+
+A **new campaign fixture is not fire-ready until its email copy is
+user-approved.** For `draft_mode=template` (the default), that means a
+`pitch.json` whose `subject_template`/`body_template` the user either supplied
+or explicitly confirmed from proposed examples (see the "New-campaign contract"
+in `../CLAUDE.md`). The system never invents copy at fire time; per-business
+variation happens only through template slots (`{opener}` via `signal_openers`,
+`{name}`, `{salutation}`, `{vertical}`, `{country}`). `draft_mode=custom`
+(freeform per-business writing) is opt-in only, on the user's explicit request.

@@ -138,7 +138,7 @@ All sub-agents are **Haiku**, dispatched **foreground**, **≤50 Agent calls per
 
 ## 5. Scripts: LIVE vs legacy
 
-**ORCHESTRATORS:** `run_fire.py` (deterministic, runs everything below) + `agent_dispatch.py` (its headless dispatch engine). **LIVE stage scripts (in order):** `merge_candidates.py` · `fetch_html.sh` · `extract_leads.py` · `qualify_leads.py` · `enrich_contact_person.py` · `draft_emails.py` / `draft_lead_custom.py` / `draft_custom.py` · `draft_whatsapp_custom.py` / `draft_whatsapp.py` (WA) · `send_batch_brevo.py` · `persist_sent_log.py` · `gen_run_readme.py`. **Shared libs (imported):** `email_utils.py`, `email_template.py`.
+**ORCHESTRATORS:** `run_fire.py` (deterministic, runs everything below) + `agent_dispatch.py` (its headless dispatch engine). **LIVE stage scripts (in order):** `merge_candidates.py` · `fetch_html.sh` (→ `fetch_html.py`) · `extract_leads.py` · `qualify_leads.py` · `enrich_contact_person.py` · `draft_emails.py` / `draft_lead_custom.py` / `draft_custom.py` · `draft_whatsapp_custom.py` / `draft_whatsapp.py` (WA) · `sync_brevo_events.py` (bounce/block/spam suppression sync, runs before every live send) · `send_batch_brevo.py` · `persist_sent_log.py` · `gen_run_readme.py`. **Shared libs (imported):** `email_utils.py`, `email_template.py`.
 
 **🗄️ LEGACY (Maps/MailScout/funnel era — NOT called by `/fire`; do not use without checking):** `run_campaign.py`, `balanced_funnel.py`, `build_funnel_config.py`, `funnel_lib.py`, `run_funnel_dry_run.py`, `score_leads.py`, `draft_qualified.py`, `draft_from_pass.py`, `enrich_emails*.py`, `resolve_emails.py`, `extract_signals.py`, `qualify_signals.py`, `recover_signals.py`, `filter_maps_leads.py`, `source_directories.py`, `source_fit_filter.py`, `batch_leads.py`, `send.py`, `send_via_brevo.py`, `send_mockup.py`, `send_eligibility_gate.py`, `apply_claude_reviews.py`, `test-*`.
 
@@ -148,14 +148,18 @@ All sub-agents are **Haiku**, dispatched **foreground**, **≤50 Agent calls per
 
 | Rule | Value | Enforced in |
 |---|---|---|
-| Never re-contact a `sent-log.md` email | domain-level + email-level dedup | `merge_candidates.py`, `extract_leads.py` |
+| Never re-contact a `sent-log.md` email | email-domain + `[[slug]]` + `dom@` tokens at merge; email-level at extract; **send-time suppression net** (sent-log + bounce-list) | `merge_candidates.py`, `extract_leads.py`, `send_batch_brevo.py` |
+| **Fresh leads only, every fire** | any domain a previous run sourced is skipped (ledger: `vault/lead-outreach/sourced-log.txt`; `SOURCED_SKIP=off` overrides) | `merge_candidates.py` |
+| Bounce/block/spam/unsub = dead-letter forever | synced from Brevo events into `bounce-list.md` before every live send | `sync_brevo_events.py`, `send_batch_brevo.py` |
+| Constructed emails need URL evidence + live domain | `pattern_inferred`/`reconstructed` without an http(s) `email_source_url` are dropped; every contact domain must have MX/A; constructed ⇒ confidence ≤ medium | `enrich_contact_person.py` |
+| Degraded fan-out = halt | enrich outputs < 60% of batches (`ENRICH_MIN_COMPLETION`) or >30% dispatch failures ⇒ ABORT | `enrich_contact_person.py`, `run_fire.py` |
 | Min extract score | **82** (`QUALIFY_MIN_SCORE`); person=90 / role=82 / personal=78 base | `qualify_leads.py`, `extract_leads.py` |
 | Drop freemail-only (`email_class: personal`) | always | `qualify_leads.py` |
 | Skip `modern_booking` signal | always (gap already solved) | `extract_leads.py` |
 | Per-run gate (e.g. hotel size ≥ medium) | `<run>/qualify.json` | `qualify_leads.py` |
 | Decision-maker DIRECT email required | generic mailboxes never sent | `name-finder` + `enrich_contact_person.py --merge` |
 | Phone/WhatsApp enrichment | **OPT-IN** (`--enrich-phone`, only when WhatsApp on) | `enrich_contact_person.py`, `name-finder.md` |
-| Enrich cap (top-N by fit) | **`ENRICH_MAX_LEADS`, default 80** — see §7 | `qualify_leads.py` |
+| Enrich cap (top-N by fit) | **`ENRICH_MAX_LEADS`, default 250** (safety ceiling; per-run `enrich_cap.txt` overrides) — see §7 | `qualify_leads.py` |
 | Send cap | `MAX_EMAILS_PER_RUN` env (default 1000) | `send_batch_brevo.py` |
 | Brevo 401/402/429 → ABORT, never persist | always | `send_batch_brevo.py` |
 | Kill on any fallback | always | `/fire` orchestrator |
@@ -166,7 +170,7 @@ All sub-agents are **Haiku**, dispatched **foreground**, **≤50 Agent calls per
 
 The funnel is `sourced → fetched → extracted → qualified → enriched → sent`. The two biggest losses are **not** quality drops:
 
-1. **The enrich cap** (`ENRICH_MAX_LEADS`, default 80) silently holds back fully-qualified leads when extraction yields more. Raise it (or set per-run) to enrich everything that qualifies — that is the #1 throughput lever.
+1. **The enrich cap** (`ENRICH_MAX_LEADS`, default 250 — a safety ceiling, rarely binding) can hold back qualified leads on a very large extract. Set per-run via `enrich_cap.txt`.
 2. **Enrichment email-resolution rate** (~60%) — leads die at 5.5 when no DIRECT decision-maker email is findable. Improving search precision here (verbatim-first, skip the phone ladder on email-only runs) raises sends without lowering quality.
 
 `source-agent` search **precision** (tight, vertical-specific queries) governs how many *sourced* leads survive to *qualified*. Keep queries specific; the agent caps at the top ~10 results per query.

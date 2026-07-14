@@ -108,7 +108,7 @@ def _footer(company: str, site: str, unsubscribe_email: str, address: str) -> st
         unsub = (f'<a href="mailto:{ue}?subject=unsubscribe" '
                  f'style="color:{MUTE};text-decoration:underline;">unsubscribe</a>')
     addr_line = f'{_html.escape(_no_dash(address))}<br>' if address else ""
-    reason = (f"You received this one, time email because {_html.escape(company)} "
+    reason = (f"You received this one time email because {_html.escape(company)} "
               f"reached out about your business. ")
     return f"""
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">

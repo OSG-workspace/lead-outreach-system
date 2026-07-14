@@ -36,18 +36,40 @@ def load_existing_wa_phones(sent_log: Path) -> set[str]:
     return phones
 
 
-def format_row(row: dict, run_slug: str) -> str:
+def format_row(row: dict, run_slug: str, website_domain: str = "") -> str:
     date = (row.get("sent_at") or "")[:10]
+    # Carry the business WEBSITE domain as a `dom@<domain>` token whenever it
+    # differs from the contact email's domain, exactly like the WhatsApp rows —
+    # so domain-level dedup blocks this business even when the decision-maker's
+    # email lives on a chain/parent/personal domain.
+    email_domain = row["to_email"].split("@", 1)[1].lower() if "@" in row.get("to_email", "") else ""
+    dom_tok = f" dom@{website_domain}" if website_domain and website_domain != email_domain else ""
     return (
         f"{date} | {row['to_email']} | [[{row['lead_slug']}]] "
-        f"| step 1 | {run_slug} | {row['message_id']}"
+        f"| step 1 | {run_slug} | {row['message_id']}{dom_tok}"
     )
 
 
-def append_rows(sent_jsonl: Path, sent_log: Path, run_slug: str) -> int:
+def load_existing_email_runs(sent_log: Path) -> set[tuple[str, str]]:
+    """(email, run_slug) pairs already logged — belt-and-braces guard against
+    double-logging the same recipient within one run (432 historical rows were
+    duplicated this way before this guard existed)."""
+    if not sent_log.exists():
+        return set()
+    pairs: set[tuple[str, str]] = set()
+    for line in sent_log.read_text().splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 5 and "@" in parts[1]:
+            pairs.add((parts[1].lower(), parts[4]))
+    return pairs
+
+
+def append_rows(sent_jsonl: Path, sent_log: Path, run_slug: str,
+                contact_index: dict | None = None) -> int:
     if not sent_jsonl.exists():
         return 0
     existing_ids = load_existing_message_ids(sent_log)
+    existing_email_runs = load_existing_email_runs(sent_log)
     new_rows: list[str] = []
     for line in sent_jsonl.read_text().splitlines():
         if not line.strip():
@@ -58,8 +80,13 @@ def append_rows(sent_jsonl: Path, sent_log: Path, run_slug: str) -> int:
         msg_id = row.get("message_id", "")
         if not msg_id or msg_id in existing_ids:
             continue
-        new_rows.append(format_row(row, run_slug))
+        email_key = (row.get("to_email", "").lower(), run_slug)
+        if email_key[0] and email_key in existing_email_runs:
+            continue
+        contact = (contact_index or {}).get(row.get("lead_id"), {})
+        new_rows.append(format_row(row, run_slug, contact.get("domain", "")))
         existing_ids.add(msg_id)
+        existing_email_runs.add(email_key)
 
     if not new_rows:
         return 0
@@ -171,16 +198,17 @@ def main() -> None:
 
     run_dir = Path(args.run_dir)
     sent_jsonl = run_dir / "emails-sent.jsonl"
-    run_slug = run_dir.name
+    run_slug = run_dir.resolve().name
     sent_log = Path(args.sent_log)
 
-    added = append_rows(sent_jsonl, sent_log, run_slug)
+    contact_index = load_contact_index(run_dir)
+    added = append_rows(sent_jsonl, sent_log, run_slug, contact_index)
     print(f"Persisted {added} new email entries to {args.sent_log}")
 
     # WhatsApp channel: record every successful WhatsApp send too, so a lead
     # contacted on WhatsApp is never re-contacted on either channel.
     wa_added = append_whatsapp_rows(
-        run_dir / "whatsapp-sent.jsonl", sent_log, run_slug, load_contact_index(run_dir)
+        run_dir / "whatsapp-sent.jsonl", sent_log, run_slug, contact_index
     )
     if wa_added:
         print(f"Persisted {wa_added} new WhatsApp entries to {args.sent_log}")

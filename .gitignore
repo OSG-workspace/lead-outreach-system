@@ -36,3 +36,8 @@ node_modules/
 # ===== misc / OS =====
 files.zip
 .DS_Store
+
+# audit 2026-07: prevent recurrence of stray agent outputs + ledger PII
+/*_result.json
+project/enrich-out-*.json
+project/vault/lead-outreach/sourced-log.txt
