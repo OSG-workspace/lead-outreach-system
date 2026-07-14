@@ -596,6 +596,27 @@ python3 tools/scripts/persist_sent_log.py \
     --sent-log vault/lead-outreach/sent-log.md
 ```
 
+### Step 9.5 — cleanup (ALWAYS, right after persist succeeds)
+
+`raw_html/` is spent cache once the run has sent: everything useful is already
+in the leads/emails JSON, and no later stage or future run ever reads it (a
+past backlog reached 28 GB). The per-agent batch/out intermediates are equally
+dead. Delete them now — keep the merged/final artifacts (`candidates-all.txt`,
+`leads-*.json`, `emails-*.json*`, `send-log.txt`, `whatsapp-*`):
+
+```bash
+rm -rf "$RUN/raw_html"
+rm -f "$RUN"/candidates-batch-* "$RUN"/queries-batch-* \
+      "$RUN"/enrich-batch-* "$RUN"/enrich-out-* \
+      "$RUN"/lead-batch-* "$RUN"/lead-out-* \
+      "$RUN"/gap-batch-* "$RUN"/gap-out-* \
+      "$RUN"/wa-batch-* "$RUN"/wa-out-*
+echo "Cleanup: raw_html + per-agent intermediates removed."
+```
+
+Skip ONLY if the user explicitly asked to keep artifacts for debugging
+(`KEEP_RUN_ARTIFACTS=1` is the equivalent flag on the `run_fire.py` path).
+
 ### Step 10 — final report
 
 ```
