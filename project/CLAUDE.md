@@ -101,50 +101,27 @@ folder yet), set it up in THIS order, before any optimizing of queries/ICP:
    opt-in ONLY when the user explicitly asks for fully custom emails, and its
    voice contract (`voice-us.md`) + merge gates stay mandatory.
 
-### Step 2 — clone the FIXED template fixture into a new dated folder, then fire
+### Step 2 — fire: ONE command, zero deliberation
 
-The campaign config is a **fixed fixture in the file structure** at `templates/<SLUG_BASE>/`
-— do **NOT** scan `runs/` or inspect previous runs. Set only `SLUG_BASE` (= the
-template folder name from the Step-1 table) and run verbatim:
+Every campaign's config is a **fixed, fire-ready fixture** at `templates/<SLUG_BASE>/`.
+Once Step 1 resolved the base, execution is exactly ONE command — do NOT scan
+`runs/`, inspect previous runs, read pipeline code, or rebuild any bash:
 
 ```bash
 cd <home>/Desktop/lead-outreach-system/project
-SLUG_BASE='us-law-firms'       # <-- the templates/<base> folder name from Step 1
-
-# 1. FIXED template fixture — known path, no runs/ scan, no analysis.
-TPL="templates/$SLUG_BASE"
-{ [ -f "$TPL/icp.yaml" ] && [ -f "$TPL/queries.txt" ]; } \
-    || { echo "ABORT: no template at $TPL (needs icp.yaml + queries.txt). Create the fixture there first."; exit 1; }
-
-# 2. ALWAYS a completely new run folder — never reuse/overwrite (bump until unused).
-SLUG="$(date +%Y-%m-%d)-$SLUG_BASE"; COUNTER=1
-while [ -d "runs/$SLUG" ]; do
-    SLUG="$(date +%Y-%m-%d)-$SLUG_BASE-$COUNTER"; COUNTER=$((COUNTER+1))
-done
-NEW="runs/$SLUG"; mkdir -p "$NEW"
-
-# 3. Clone every control file in the fixture into the new run.
-cp "$TPL"/* "$NEW"/ 2>/dev/null
-echo "Bootstrapped $NEW from $TPL."
+bash tools/scripts/fire_campaign.sh <SLUG_BASE>          # add --dry-run to preview, --plan to trace
 ```
 
-Then launch immediately (deterministic orchestrator): `python3 tools/scripts/run_fire.py "$SLUG"`.
+`fire_campaign.sh` does everything mechanically: validates the fixture is
+fire-ready (icp + queries; `pitch.json` for template mode — the template-first
+contract is enforced here; `vertical.txt` for custom mode), clones it into a
+brand-new dated `runs/` folder (never reuses one), and hands off to the
+deterministic orchestrator `run_fire.py` (pure Python, headless sub-agent
+dispatch, ~0 orchestrator tokens). If anything is missing it ABORTs with the
+exact file to create — that is the ONLY case where you stop and talk to the user.
 
-Then hand off to the **deterministic orchestrator** — your job (the Claude turn) was
-only to resolve the phrase → slug; execution has no AI brain:
-
-```bash
-python3 tools/scripts/run_fire.py "$SLUG"        # add --dry-run for a preview (no send)
-```
-
-`run_fire.py` runs the whole pipeline as pure Python and dispatches the Haiku
-sub-agents itself via headless `claude -p` (`agent_dispatch.py`) — same agents,
-same scripts, same quality as the in-session path, but ~0 orchestrator tokens and
-fully reproducible. It reads `draft_mode.txt` / `channels.json` and picks the
-template / combined-custom / WhatsApp path automatically. When a target was named,
-do not stop in between. **Alternative (in-session):** invoke `/fire $SLUG` to run
-the same stages through the Agent tool (read `.claude/commands/fire.md`) — useful
-for debugging one stage. Use `--plan` to trace what a slug would run without executing.
+**Alternative (in-session, debugging one stage only):** bootstrap with the same
+script using `--plan`, then run `/fire <slug>` per `.claude/commands/fire.md`.
 
 ### When to ASK instead of firing
 

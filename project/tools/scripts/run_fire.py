@@ -146,7 +146,8 @@ def main():
     # pre-flight: agent definition + queries
     if not (ad.AGENTS_DIR / f"{source_agent}.md").exists():
         die("pre-flight", f"missing agent def {source_agent}.md")
-    queries = [q.strip() for q in read_cfg(run, "queries.txt").splitlines() if q.strip()]
+    queries = [q.strip() for q in read_cfg(run, "queries.txt").splitlines()
+               if q.strip() and not q.strip().startswith("#")]
     if not queries:
         die("pre-flight", "queries.txt empty")
 
