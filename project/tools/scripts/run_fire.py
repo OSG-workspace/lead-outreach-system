@@ -33,9 +33,24 @@ SENT_LOG = "vault/lead-outreach/sent-log.md"
 
 
 PLAN = False   # --plan: trace the stage sequence without executing anything
+STATUS_FILE: Path | None = None   # runs/<slug>/status.txt — live heartbeat for the session/user
+
+
+def status(line: str):
+    """Overwrite the run's status.txt with the current stage + timestamp.
+    The Claude session monitoring a fire reads THIS file to narrate progress
+    to the user — a run must never go dark for minutes."""
+    if PLAN or STATUS_FILE is None:
+        return
+    from datetime import datetime
+    try:
+        STATUS_FILE.write_text(f"{datetime.now().strftime('%H:%M:%S')}  {line}\n")
+    except Exception:
+        pass
 
 
 def die(stage: str, msg: str, code: int = 1):
+    status(f"ABORTED: {stage} — {msg}")
     print(f"ABORT: {stage} — {msg}", file=sys.stderr)
     sys.exit(code)
 
@@ -43,11 +58,13 @@ def die(stage: str, msg: str, code: int = 1):
 def sh(args: list[str], stage: str):
     """Run a pipeline script; abort the whole run on non-zero (kill-on-fallback)."""
     print(f"\n=== {stage}: {' '.join(args)}")
+    status(f"{stage} — running")
     if PLAN:
         return
     r = subprocess.run(args, cwd=str(PROJECT))
     if r.returncode != 0:
         die(stage, f"command exited {r.returncode}", r.returncode)
+    status(f"{stage} — done")
 
 
 def read_cfg(run: Path, name: str, default: str = "") -> str:
@@ -86,6 +103,7 @@ def count_lines(p: Path) -> int:
 def fan_out(agent: str, prompts: list[str], stage: str, max_workers: int, timeout: int = 420):
     """Dispatch one sub-agent per prompt, in parallel, via headless claude -p."""
     print(f"\n=== {stage}: dispatching {len(prompts)} × {agent} (≤{max_workers} parallel, headless)")
+    status(f"{stage} — 0/{len(prompts)} {agent} agents finished (dispatching)")
     if PLAN:
         print(f"  [plan] would run {len(prompts)} {agent} agents; sample prompt:\n"
               f"      {(prompts[0][:120] + '…') if prompts else '(none)'}")
@@ -97,6 +115,7 @@ def fan_out(agent: str, prompts: list[str], stage: str, max_workers: int, timeou
         tag = "ok" if rc == 0 else f"rc={rc}"
         last = (out.strip().splitlines() or [""])[-1][:80]
         print(f"  [{done['n']}/{len(prompts)}] {agent} {tag}: {last}")
+        status(f"{stage} — {done['n']}/{len(prompts)} {agent} agents finished")
 
     res = ad.dispatch_pool(agent, prompts, max_workers=max_workers, timeout=timeout,
                            cwd=str(ad.REPO), on_done=_cb)
@@ -128,6 +147,9 @@ def main():
     if not run.is_dir():
         die("pre-flight", f"run folder not found: {run}")
     abs_run = run.resolve()
+    global STATUS_FILE
+    STATUS_FILE = abs_run / "status.txt"
+    status("starting")
 
     # --- Step 1: resolve config (deterministic) ---
     source_agent = read_cfg(run, "source_agent.txt", "source-agent")
@@ -273,6 +295,8 @@ def main():
     if not a.dry_run:
         cleanup_run_artifacts(run)
 
+    status(f"DONE — qualified={qualified} drafted={drafted} "
+           f"{'(dry-run, nothing sent)' if a.dry_run else 'sent+persisted'}")
     print(f"\nDONE: {a.slug} — qualified={qualified} drafted={drafted} "
           f"{'(dry-run, nothing sent)' if a.dry_run else 'sent+persisted'}")
 

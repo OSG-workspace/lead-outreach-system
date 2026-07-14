@@ -120,6 +120,22 @@ deterministic orchestrator `run_fire.py` (pure Python, headless sub-agent
 dispatch, ~0 orchestrator tokens). If anything is missing it ABORTs with the
 exact file to create — that is the ONLY case where you stop and talk to the user.
 
+**Live status — NEVER go dark during a run (user directive).** A fire takes
+5-12 minutes; the user must see progress, not silence. Launch the command with
+`run_in_background: true` (ONE background Bash process is fine — the
+no-background rule applies to Agent-tool fan-outs, not to this single process).
+Then, while it runs, poll the run's heartbeat roughly every 60-90 seconds:
+
+```bash
+cat runs/<slug>/status.txt     # run_fire.py overwrites this at every stage + agent completion
+```
+
+and relay a ONE-LINE update to the user each time it changes stage (e.g.
+"Sourcing: 41/96 agents done" → "Merged 214 fresh candidates, fetching HTML" →
+"Enriching decision-makers: 30/80" → "Sent 46, persisting"). On completion,
+give the Step-10-style final report. If status.txt shows `ABORTED: …`, surface
+the exact abort line immediately.
+
 **Alternative (in-session, debugging one stage only):** bootstrap with the same
 script using `--plan`, then run `/fire <slug>` per `.claude/commands/fire.md`.
 
