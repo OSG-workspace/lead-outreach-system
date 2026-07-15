@@ -164,7 +164,7 @@ observed format evidence.
 ```
 **Success (reconstructed):**
 ```json
-{"lead_id":"web-dentakay-com","found":true,"first_name":"Onur","last_name":"Akay","title":"Mr.","role":"Founder & CEO","email":"onur@dentakay.com","email_basis":"reconstructed_from_mask","phone":"","source_url":"https://dentakay.com/about","email_source_url":"https://rocketreach.co/onur-akay-email — masked o**@dentakay.com confirms firstname format","phone_source_url":"","confidence":"medium"}
+{"lead_id":"web-dentakay-com","found":true,"first_name":"Onur","last_name":"Akay","title":"Mr.","role":"Founder & CEO","email":"onur@dentakay.com","email_basis":"reconstructed_from_mask","phone":"","source_url":"https://dentakay.com/about","email_source_url":"https://rocketreach.co/onur-akay-email","email_evidence_note":"masked o**@dentakay.com confirms firstname format","phone_source_url":"","confidence":"medium"}
 ```
 **Not found:**
 ```json
@@ -179,7 +179,7 @@ Field rules:
 - `email` — the decision-maker's direct address, lowercase, not a generic mailbox.
 - `email_basis` — `verbatim` | `reconstructed_from_mask` | `pattern_inferred`. REQUIRED on `found:true`.
 - `phone` — `""` if not visible, else the personal/mobile number, international with `+`. Never invent. Switchboard = empty.
-- `source_url` / `email_source_url` / `phone_source_url` — where you found the name / the email-or-format-evidence (required, cite it) / the phone.
+- `source_url` / `email_source_url` / `phone_source_url` — where you found the name / the email-or-format-evidence / the phone. **`email_source_url` MUST be a bare `http(s)://` URL and nothing else — no prose, no notes appended.** The pipeline DROPS any reconstructed/pattern email whose `email_source_url` is not a real URL, so prose here throws the whole lead away. Put any explanation in the separate optional `email_evidence_note` field instead.
 - `confidence` — `high` (verbatim, credible source), `medium` (verbatim snippet OR evidence-based reconstruction). Do not ship `low` — use `found:false`.
 
 ## Inclusion — `found:true` requires ALL

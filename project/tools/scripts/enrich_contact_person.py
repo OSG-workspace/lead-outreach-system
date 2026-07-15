@@ -173,6 +173,31 @@ def domain_accepts_mail(domain: str) -> bool:
 
 CONSTRUCTED_BASES = {"pattern_inferred", "reconstructed_from_mask"}
 
+GENERIC_HARVEST_LOCALS = {
+    "info", "contact", "hello", "support", "admin", "office", "sales",
+    "bookings", "booking", "reservations", "reception", "frontdesk",
+    "careers", "hr", "jobs", "marketing", "press", "events", "noreply",
+}
+
+
+@functools.lru_cache(maxsize=None)
+def _site_has_person_format(domain: str) -> bool:
+    """True if the business's OWN scraped pages contain at least one
+    person-format same-domain address (e.g. sarah.jones@domain) — that is real,
+    auditable format evidence for a constructed address even when the agent
+    failed to cite a URL for it."""
+    if harvest_domain is None:
+        return False
+    try:
+        harvested = harvest_domain(domain, ROOT / "raw_html")
+    except Exception:
+        return False
+    for addr in harvested.get("personal", []):
+        local, _, dom = addr.lower().partition("@")
+        if dom == domain and local and local not in GENERIC_HARVEST_LOCALS:
+            return True
+    return False
+
 
 def phase_merge() -> None:
     """Read enrich-out-*.json, join to leads-extracted.json, drop leads with
@@ -299,9 +324,16 @@ def phase_merge() -> None:
             # A constructed address needs REAL, auditable format evidence — a URL,
             # not prose ("RocketReach analysis suggests 93.8%…"). Constructed
             # addresses were 66% of sends and drove the 21% hard-bounce rate.
+            # VOLUME-SAVING FALLBACK: when the agent cited prose instead of the
+            # URL it visited, a same-domain person-format email harvested from
+            # the business's OWN scraped pages is equally real format evidence —
+            # accept on that basis instead of throwing the lead away.
             if not evidence_url.lower().startswith(("http://", "https://")):
-                dropped_no_evidence_url += 1
-                continue
+                if _site_has_person_format(email.split("@", 1)[1]):
+                    result["email_evidence_note"] = "site-harvested same-domain person email (merge fallback)"
+                else:
+                    dropped_no_evidence_url += 1
+                    continue
             # The spec caps reconstructed addresses at medium confidence.
             if (result.get("confidence") or "").strip() == "high":
                 result["confidence"] = "medium"
@@ -346,6 +378,20 @@ def phase_merge() -> None:
     print(f"  dropped dead-domain (no MX/A):   {dropped_dead_domain}")
     print(f"  enrich-out parse errors:         {parse_errors}")
     print(f"Wrote {WITH_CONTACT}")
+    # Persist the gate counters — post-run cleanup deletes the per-agent
+    # enrich-out files, so this summary is the only surviving diagnostic of
+    # WHERE leads died in enrichment.
+    (ROOT / "enrich-summary.json").write_text(json.dumps({
+        "batches": n_batches, "agent_outputs": n_outs,
+        "survived": len(survivors), "email_basis": dict(basis),
+        "dropped_no_match": dropped_no_match,
+        "dropped_name_or_gender": dropped_no_name,
+        "dropped_business_as_surname": dropped_business_as_surname,
+        "dropped_no_direct_email": dropped_no_email,
+        "dropped_constructed_no_url_evidence": dropped_no_evidence_url,
+        "dropped_dead_domain": dropped_dead_domain,
+        "parse_errors": parse_errors,
+    }, indent=2) + "\n")
     if not survivors:
         print("ABORT: Stage 5.5 produced 0 leads with resolved contact + gender.")
         raise SystemExit(7)

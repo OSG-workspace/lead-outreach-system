@@ -123,3 +123,50 @@ top luxury resort hotels Turkey Bodrum Antalya Cappadocia reservations
 # === MEDITERRANEAN ISLANDS ===
 5 star hotel Malta Valletta luxury reservations phone
 5 star hotel Cyprus Limassol Nicosia luxury front desk reservations
+
+# === EXPANSION WAVE 2 (2026-07) — new cities + new angles (freshness net needs unmined queries) ===
+grand palace hotel Malaga seafront reservations phone
+5 star spa hotel Granada Alhambra reservations front desk
+luxury parador hotel Cordoba Toledo Salamanca reservations
+5 star wellness spa hotel Santander Asturias Oviedo reception
+adults only luxury resort Lanzarote Fuerteventura reservations
+golf resort hotel Costa Brava Girona Tarragona front desk
+thermal spa hotel Murcia Almeria Cadiz reservations phone
+wedding venue luxury hotel Andalusia countryside reservations
+grand hotel Turin Piedmont luxury reservations front desk
+5 star hotel Genoa Portofino Ligurian coast reservations
+luxury seafront hotel Naples Capri Ischia reservations phone
+grand hotel Rimini Riccione Adriatic beachfront reservations
+5 star ski resort hotel Cortina Courmayeur Dolomites reception
+luxury lakefront hotel Lake Garda Lake Maggiore reservations
+wellness spa resort Umbria Perugia Assisi reservations
+boutique 5 star palazzo hotel Trieste Ravenna reservations
+golf and spa resort Tuscany Maremma reservations front desk
+grand hotel Toulouse Montpellier Occitanie reservations phone
+5 star chateau hotel Loire Valley Normandy Deauville reservations
+luxury ski hotel Courchevel Megeve Val d Isere reception
+palace hotel Biarritz Basque coast thalasso reservations
+5 star hotel Lille Nantes Rennes city centre reservations
+luxury resort hotel Corsica Ajaccio Porto Vecchio reservations
+wellness thalasso resort Brittany Saint Malo reservations
+grand hotel Aix en Provence Avignon Luberon reservations
+5 star hotel Braga Guimaraes northern Portugal reservations
+luxury vineyard hotel Douro Valley Alentejo reservations phone
+adults only resort Albufeira Lagos western Algarve reception
+5 star spa hotel Azores Sao Miguel reservations front desk
+grand resort hotel Thessaloniki Halkidiki reservations phone
+5 star resort Rhodes Kos Dodecanese beachfront reservations
+luxury cave hotel Santorini Oia Imerovigli reservations
+5 star resort Corfu Zakynthos Ionian islands front desk
+boutique luxury hotel Nafplio Peloponnese Costa Navarino
+wedding destination hotel Crete Chania Elounda reservations
+historic grand dame hotel Vienna Salzburg reservations phone
+5 star spa hotel Baden Baden Black Forest reservations
+luxury alpine resort Zermatt St Moritz Interlaken reception
+grand hotel Amsterdam canal luxury reservations front desk
+5 star hotel Bruges Ghent Antwerp historic centre reservations
+palace hotel Prague Budapest old town reservations phone
+5 star seaside resort Dubrovnik Split Hvar reservations
+luxury resort hotel Bodrum Antalya coast front desk reservations
+grand hotel Copenhagen Stockholm Oslo waterfront reservations
+5 star castle hotel Ireland Scotland countryside reservations
