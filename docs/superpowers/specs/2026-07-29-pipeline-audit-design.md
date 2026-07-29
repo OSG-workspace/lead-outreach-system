@@ -134,24 +134,39 @@ documents query scoping as an enforced net, §7 claims ~60% enrichment resolutio
 
 Ordered by effect on lead volume.
 
-### 3.1 Sourcing: Stage 2 becomes the set of adapters it was designed as
+### 3.1 Sourcing: Stage 2 at its peak — the adapter set it was designed as
 
 **Trunk:** run every adapter a branch declares, in order, into the same candidate
-contract. No adapter is vertical-aware.
+contract. No adapter is vertical-aware. Eight changes, in order of yield:
 
-- `resolve_domains` moves from per-branch opt-in to **trunk default** (a chain
-  capability, not a branch behavior). Its verification gate is unchanged: unproven
-  domains are dropped, per kill-on-fallback.
-- Branches whose ICP is poorly mapped declare a `directory` source alongside `map`.
-  For au-trades: trade licensing registers and association member lists.
-- **`--probe` mode** (new): report element count and `website` share for a branch's
-  selector × places **without firing**. Prevents another 8 runs against a
-  31-element universe. Probe output is written to the branch folder as
-  `coverage.md` so reach is a visible property of the branch.
-- Widen the au-trades selector to the full trade craft list (22 → 31 in Sydney);
-  correct but not sufficient on its own — the directory source is the real fix.
-- City ledger records **yield per city**, so a thin sweep is visible instead of
-  silently marking a metro done.
+1. **`resolve_domains` becomes trunk default** (today: opt-in, off in 17/20).
+   39–61% of OSM elements are name-only and are currently discarded at source.
+   Verification gate unchanged — unproven domains dropped, per kill-on-fallback.
+2. **Directory adapters for OSM-poor ICPs.** Branches whose audience isn't mapped
+   declare a `directory` source alongside `map`. For au-trades: trade licensing
+   registers and association member lists. This is the only real fix for trades.
+3. **Ledger key includes the target signature, not just `vertical|city`.**
+   Critical: all 6 au-trades cities are ledgered under `trades`. Widening the
+   selector would change nothing, because those cities are permanently skipped.
+   Keying the ledger on the *target definition* means a widened or corrected
+   selector legitimately reopens ground it never actually searched.
+4. **Widen selectors to the full tag surface.** au-trades' `craft~plumber|
+   electrician|hvac` misses `heating_engineer`, `roofer`, `carpenter` and the
+   `shop=` equivalents (measured Sydney: 22 → 31 via craft alone, +45 under
+   `shop~hvac|electrical|plumbing|trade`). Necessary, not sufficient.
+5. **Tile large metros instead of one small box.** The built-in city table is
+   calibrated for "the hotel core, not the metro sprawl" (`source_overpass.py:100`)
+   — correct for city-centre hotels, wrong for suburban trades and clinics. A
+   metro is swept as a grid of tiles, each ledgered independently.
+6. **More Overpass mirrors.** Two today; the public endpoint 429/504s routinely and
+   a failed city is silently retried next fire. Adding known-good mirrors converts
+   failed sweeps into completed ones.
+7. **`--probe` mode (new):** report element count and `website` share for a
+   branch's selector × places **without firing**. This is what prevents another 8
+   runs against a 31-element universe. Written to the branch as `coverage.md`, so
+   reach is a visible, reviewable property of every branch.
+8. **Per-city yield recorded at ledger time**, so a thin sweep is visible instead
+   of silently marking a metro done.
 
 **Branch:** `sourcing.json` gains a `sources` array. Everything else unchanged.
 
@@ -165,8 +180,10 @@ freemail domains. Collapse to one trunk rule:
 
 - Generic locals (`info@`, `sales@`, `bookings@`) never pass — not person-tied.
   Unchanged.
-- A freemail passes **only** with `email_basis: verbatim` plus a source URL tying it
-  to the named decision-maker. An unattributed freemail still fails.
+- A freemail passes **only when we can prove whose it is**: `email_basis: verbatim`
+  plus a cited source URL on which that address appears alongside that named person.
+  A guessed, inferred, or unattributed freemail still fails — proof of ownership is
+  the whole condition.
 - The blanket `email_class: personal` drop at qualify is removed — it pre-empts the
   real gate with strictly less information. Qualify still *ranks* person > role >
   freemail, so the strongest leads sort first.
@@ -193,7 +210,7 @@ New ledger `vault/lead-outreach/enrich-log.jsonl`, keyed by domain, written by
   so attempt #2 resumes where #1 stopped rather than redoing the name search. This
   is data on the lead, not a second code path — the trunk treats fresh and retried
   leads identically.
-- Cap at **3 attempts**. `no_agent_output` is infrastructure, not a verdict, and
+- Cap at **2 attempts**. `no_agent_output` is infrastructure, not a verdict, and
   does not count against the cap.
 - **Fresh-first ordering:** fresh leads fill a run to the cap; the backlog only tops
   up the remainder. A run can never be crowded out by the queue.
@@ -209,29 +226,55 @@ only — a genuinely unfindable market must not read as an infrastructure failur
 
 ---
 
-## 4. De-verticalizing the trunk
+## 4. The leak: trunk stays general, every run stays on its own path
 
-| Today (trunk knows the vertical) | After (trunk knows the shape) |
+This is a **bug**, not a style preference. One campaign's concepts have leaked into
+the shared trunk, so every other campaign now carries them. Proof: every dropped
+record in the **Australian plumbing** run carries `"hotel_volume": "na"`, and
+`qualify_leads.py:139` ranks those plumbers with a hotel-shaped sort key.
+
+Two invariants, both enforced automatically:
+
+**I1 — The trunk is general.** Trunk code may not name any vertical, campaign, or
+region. It operates only on generic lead properties.
+
+**I2 — A run is isolated.** A run's artifacts contain only fields its own branch
+defines. No campaign can observe another campaign's concepts.
+
+### 4.1 What changes
+
+| Today (leaked into the trunk) | After (trunk knows only the shape) |
 |---|---|
 | `HOTEL_VERTICALS`, `hotel_volume`, `require_hotel_size_volume` in `qualify_leads.py` + `extract_leads.py` | generic `scale_tier`; the signals that earn each tier are declared in the branch's `qualify.json` |
-| `COUNTRY_NAMES` = GCC + LB only (`enrich_contact_person.py:76`) | the full `COUNTRY_NAMES_ISO` already in `email_utils.py` |
-| `draft_mode` → 3 draft scripts | one drafter; branch supplies `pitch.json` or a writer prompt |
+| `COUNTRY_NAMES` = GCC + LB only (`enrich_contact_person.py:76`) — an AU lead reaches the agent as bare `AU` | the full `COUNTRY_NAMES_ISO` already in `email_utils.py` |
+| `draft_mode` → 3 separate draft scripts | one drafter; branch supplies `pitch.json` or a writer prompt |
 | `resolve_domains` per-branch opt-in | trunk default |
+| Built-in 195-city table calibrated for hotels, used by every campaign | branch-owned `places.txt`; the table becomes one branch's data |
 | 6 × `source-agent-<region>.md` | deleted; Stage 2 is one adapter set |
 
-Proof this matters: every dropped record in the **Australian plumbing** run carries
-`"hotel_volume": "na"`. A trades run is ranked by a hotel-shaped function
-(`qualify_leads.py:139`).
+### 4.2 Enforced by tests, not convention
 
-### 4.1 The rule becomes a test
+- **`tests/test_one_chain.py`** — greps trunk scripts for vertical/campaign proper
+  nouns (hotel, clinic, plumber, law, trades, receptionist, …) and fails on a hit.
+  Adding eu-hotels-style special-casing to the trunk breaks the build instead of
+  quietly accumulating.
+- **`tests/test_run_isolation.py`** — fires two different branches in `--dry-run`
+  and asserts neither run's artifacts contain a field the other branch defines.
 
-`tests/test_one_chain.py` greps trunk scripts for vertical proper nouns (hotel,
-clinic, plumber, law, trades, receptionist, …) and fails on a hit. Adding
-eu-hotels-style special-casing to the trunk then breaks the build instead of
-quietly accumulating.
+### 4.3 Verified against the runs that already happened
 
-**A new campaign is exactly one folder:** `places.txt` · `sourcing.json` ·
-`pitch.json` · `icp.yaml` · `qualify.json`.
+The invariants are not only applied going forward — the existing 124 run folders are
+the regression corpus:
+
+- Scan every past run's artifacts for leaked fields. Today `hotel_volume` appears in
+  non-hotel runs; after the fix a fresh run of the same branch must not produce it.
+- Re-run `qualify_leads.py` over the stored `leads-extracted.json` of past eu-hotels
+  runs and assert the qualified set is **byte-identical** before and after
+  de-verticalization. Hotels must keep their exact behaviour; only the mechanism moves
+  from the trunk into the branch.
+
+**A new campaign is then exactly one folder:** `places.txt` · `sourcing.json` ·
+`pitch.json` · `icp.yaml` · `qualify.json`. No trunk change, no agent, no queries.
 
 ---
 
@@ -248,7 +291,7 @@ search-method scaffolding in `new_campaign.py` · search branches in
 `.git.bak` (440 KB) + `project/.git.bak` (34 MB) · `MAILSCOUT_INTEGRATION.md` ·
 `project/README.md` · `.archive/legacy-skills/`.
 
-### 5.2 Docs — four live files, each with a role header
+### 5.2 Docs — four live files, each stating its own role
 
 | File | Role |
 |---|---|
@@ -259,9 +302,25 @@ search-method scaffolding in `new_campaign.py` · search branches in
 
 `PIPELINE.md` folds its still-true rationale into `ARCHITECTURE.md` and is deleted.
 Every surviving MD opens with three lines: what it is, when to read it, what not to
-use it for.
+use it for. Every branch folder gets a short `README.md` stating that branch's
+audience, sources, and copy — so a run explains itself without reading the trunk.
 
-### 5.3 Run history
+### 5.3 "No dead code, no unused files" becomes checkable
+
+A one-off cleanup rots. Three checks run in CI so the folder cannot drift back:
+
+- **`tests/test_no_dead_code.py`** — every function in `tools/scripts/` is
+  referenced somewhere; every script is reachable from `run_fire.py`,
+  `fire_campaign.sh`, or is an explicitly-listed operator tool. Today this fails on
+  4 functions and the whole search layer.
+- **`tests/test_no_orphan_docs.py`** — every `.md` is either linked from a live doc
+  or listed as intentionally standalone; every `.md` has a role header. Today this
+  fails on `PIPELINE.md`, `README.md`, `MAILSCOUT_INTEGRATION.md`, and the archive.
+- **`tests/test_fixture_shape.py`** — every `templates/<base>/` has exactly the
+  expected file set. A leftover `queries.txt` or a missing `places.txt` fails
+  loudly. This is what stops half-finished branches reaching a fire.
+
+### 5.4 Run history
 Keep `enrich-summary.json`, `leads-dropped.json`, `status.txt` for all 124 runs —
 that trio is what made this audit possible. Strip `raw_html/` and intermediate JSON
 from runs older than 30 days (`runs/` is currently 1.3 GB).
@@ -270,15 +329,22 @@ from runs older than 30 days (`runs/` is currently 1.3 GB).
 
 ## 6. Success criteria
 
-1. An au-trades fire sources materially more than 51 fresh candidates, and does not
-   abort on an exhausted city ledger.
-2. Enrichment dispatches agents only for leads with a plausible path to a
-   decision-maker; repeat-failure share of the fan-out drops from ~93% to ~0.
-3. Sends per run rise, with the verbatim/evidence-tied share of contact emails not
-   falling — volume without lowering the bar.
-4. `tests/test_one_chain.py` passes, and a new campaign requires no trunk change.
-5. Every remaining MD states its role in its first three lines; no MD describes a
-   stage or agent that no longer exists.
+1. **Sourcing at peak** — an au-trades fire sources materially more than 51 fresh
+   candidates and does not abort on an exhausted ledger. `--probe` reports a real
+   coverage number for every branch before it fires.
+2. **No repeated work** — repeat-failure share of the enrichment fan-out drops from
+   ~93% to ~0; retries resume from prior findings and stop after 2.
+3. **More leads, same bar** — sends per run rise, with the verbatim/evidence-tied
+   share of contact emails not falling. A gmail only ships when a cited source ties
+   it to the named person.
+4. **No leak** — `test_one_chain.py` and `test_run_isolation.py` pass; a fresh run
+   of a non-hotel branch contains no `hotel_volume`; re-running `qualify_leads.py`
+   over stored eu-hotels extracts is byte-identical to before.
+5. **Nothing dead, everything self-describing** — `test_no_dead_code.py`,
+   `test_no_orphan_docs.py`, `test_fixture_shape.py` pass. Every MD states its role
+   in its first three lines; no MD describes a stage or agent that no longer exists;
+   every branch folder explains its own audience, sources, and copy.
+6. **A new campaign is one folder** — adding one requires no trunk change.
 
 ## 7. Out of scope
 
