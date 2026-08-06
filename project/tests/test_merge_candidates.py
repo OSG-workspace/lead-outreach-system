@@ -1,7 +1,16 @@
-"""Tests for merge_candidates.py"""
+"""Tests for merge_candidates.py
+
+These fixtures use deliberately fake hostnames (clinic.ae, example.com …), so
+merge's live-DNS net would drop every row and fail the assertions for a reason
+unrelated to merge logic. MERGE_SKIP_DNS keeps the suite hermetic: no network,
+no resolver flakiness. The net itself is exercised in production, never here.
+"""
+import os
 import sys
 from pathlib import Path
 import pytest
+
+os.environ["MERGE_SKIP_DNS"] = "1"
 
 PROJECT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT / "tools" / "scripts"))

@@ -13,7 +13,7 @@ does by hand.
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`
+`project/vault/lead-outreach/voice-lb-wa.md`
 If it is missing, abort and report. Do not improvise voice.
 
 ## Input (from orchestrator)

@@ -1,7 +1,8 @@
 # LinkedIn channel — crontab lines. NOT INSTALLED. Review, then `crontab -e`.
 # Times are the machine's local time. Set CRON_TZ so they track Europe/Paris.
 CRON_TZ=Europe/Paris
-LI=<home>/lead-outreach-system/project/linkedin
+# Set LI to YOUR checkout, e.g. LI=$HOME/lead-outreach-system/project/linkedin
+LI=__LINKEDIN_DIR__
 
 # 09:10 weekdays — THE WHOLE SEND SIDE, one command.
 # Tops up today's invites from the backlog, sends them paced across the window,

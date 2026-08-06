@@ -36,7 +36,7 @@ Added MailScout as an optional complementary enrichment step. Two strategies:
 MailScout is already installed. Verify:
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <your-checkout>/project
 ./tools/venv/bin/python -c "from mailscout import Scout; print('✓ MailScout ready')"
 ```
 
@@ -45,7 +45,7 @@ cd <home>/lead-outreach-system/project
 ### Option A: Sequential (crawl4ai + MailScout)
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <your-checkout>/project
 
 ./tools/run.sh tools/scripts/run_campaign.py \
     --run-slug 2026-05-22-gcc-consumer-chains-mailscout \
@@ -64,7 +64,7 @@ cd <home>/lead-outreach-system/project
 ### Option B: MailScout only (faster)
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <your-checkout>/project
 
 # First, enrich the source-fit leads
 ./tools/venv/bin/python tools/scripts/enrich_emails_mailscout.py \
@@ -207,6 +207,6 @@ These fallback to `dm_email` field in resolution step if ICP gap signal is stron
 
 ## Questions?
 
-- MailScout README: `<home>/Desktop/mailscout/README.md`
+- MailScout README: in your local MailScout checkout
 - Integration code: `project/tools/scripts/enrich_emails_mailscout.py`
 - Run campaign: `project/tools/scripts/run_campaign.py` (search for `--mailscout`)

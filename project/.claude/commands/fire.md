@@ -14,7 +14,7 @@ Sourcing is **deterministic enumeration** (`source_overpass.py` / `source_places
 ## File structure (must be in place before /fire runs)
 
 ```
-<home>/lead-outreach-system/
+<repo-root>/            # your checkout; scripts resolve this themselves
 ├── .claude/
 │   ├── settings.json                  # permissions: WebSearch, WebFetch, Bash, Write, etc.
 │   └── agents/
@@ -68,12 +68,16 @@ If any required file is missing → ABORT with the missing path. Do not improvis
 ### Step 0 — pre-flight (global)
 
 ```bash
+# Resolve the repo root from the CURRENT directory, never a baked-in path —
+# this playbook has to work in anyone's checkout, not just the author's.
+PROJ="$(git rev-parse --show-toplevel 2>/dev/null || cd "$(pwd)/.." && pwd)"
+
 # Settings must include WebSearch (sub-agents inherit this)
-grep -q '"WebSearch"' <home>/lead-outreach-system/.claude/settings.json \
+grep -q '"WebSearch"' "$PROJ/.claude/settings.json" \
     || { echo "ABORT: .claude/settings.json missing WebSearch in permissions.allow"; exit 1; }
 
 # name-finder is required for every run (Stage 5.5)
-[ -f <home>/lead-outreach-system/.claude/agents/name-finder.md ] \
+[ -f "$PROJ/.claude/agents/name-finder.md" ] \
     || { echo "ABORT: .claude/agents/name-finder.md missing (Stage 5.5 contact enrichment)"; exit 1; }
 ```
 
@@ -105,7 +109,7 @@ definition, and voice spec that path will touch. This turns a mid-run failure
 Run this verbatim:
 
 ```bash
-PROJ=<home>/lead-outreach-system
+PROJ="$(git rev-parse --show-toplevel 2>/dev/null || cd "$(pwd)/.." && pwd)"
 ABORT(){ echo "ABORT (pre-flight): $1"; exit 1; }
 
 # --- resolve the path from the run's control files ---

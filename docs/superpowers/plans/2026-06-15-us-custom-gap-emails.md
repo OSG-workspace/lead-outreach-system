@@ -32,7 +32,7 @@
 
 All script commands run from `project/` with the venv active:
 ```bash
-cd <home>/lead-outreach-system/project && source tools/venv/bin/activate
+cd <repo-root>/project && source tools/venv/bin/activate
 ```
 
 ---
@@ -134,7 +134,7 @@ git commit -m "feat: shared dash guard for hard no-em-dash restriction"
 
 - [ ] **Step 1: Create the agent file**
 
-Create `<home>/lead-outreach-system/.claude/agents/gap-finder.md`:
+Create `<repo-root>/.claude/agents/gap-finder.md`:
 
 ````markdown
 ---
@@ -222,7 +222,7 @@ tool other than Read, WebSearch, WebFetch, Write. You are the leaf.
 
 Run:
 ```bash
-cd <home>/lead-outreach-system
+cd <repo-root>
 grep -E "^tools: Read, WebSearch, WebFetch, Write$" .claude/agents/gap-finder.md && \
 grep -c "FORBIDDEN as" .claude/agents/gap-finder.md
 grep -nE "[\xe2\x80\x94\xe2\x80\x93]" .claude/agents/gap-finder.md && echo "DASH FOUND — fix it" || echo "no dashes OK"
@@ -566,7 +566,7 @@ already dash-free; Step 2 enforces it.
 
 Run:
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 grep -nE "[\xe2\x80\x94\xe2\x80\x93]" vault/lead-outreach/email-template-us.md && echo "DASH FOUND — fix it" || echo "no dashes OK"
 grep -c "PARA 1 - EVIDENCE" vault/lead-outreach/email-template-us.md
 ```
@@ -720,7 +720,7 @@ that share a pitch sentence with another are dropped at merge. No stock
 
 Run:
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 grep -c "Not a chatbot" vault/lead-outreach/voice-us.md
 grep -c "Tuesday or Thursday afternoon work for a quick" vault/lead-outreach/voice-us.md
 grep -c "Moreno Family Law" vault/lead-outreach/voice-us.md
@@ -746,7 +746,7 @@ git commit -m "refactor: voice-us.md drops example + stock lines, per-business o
 
 - [ ] **Step 1: Replace the agent file**
 
-Overwrite `<home>/lead-outreach-system/.claude/agents/gap-writer.md`:
+Overwrite `<repo-root>/.claude/agents/gap-writer.md`:
 
 ````markdown
 ---
@@ -764,7 +764,7 @@ built on the gap record in your batch file, then exit.
 
 ## Step 0: read the voice spec AND the template (REQUIRED, first)
 `Read` both, follow exactly:
-- `<home>/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
+- `<repo-root>/project/vault/lead-outreach/voice-us.md`
 - the `Template:` path given in your batch file.
 If either is missing, abort and report. Do not improvise voice or structure.
 
@@ -829,7 +829,7 @@ than Read, Write. You are the leaf.
 
 Run:
 ```bash
-cd <home>/lead-outreach-system
+cd <repo-root>
 grep -E "^tools: Read, Write$" .claude/agents/gap-writer.md && echo "tools OK"
 grep -c "already found" .claude/agents/gap-writer.md
 grep -c "WebSearch" .claude/agents/gap-writer.md
@@ -1488,7 +1488,7 @@ if [ -f "$RUN/draft_mode.txt" ] && [ "$(head -1 "$RUN/draft_mode.txt" | tr -d ' 
     for need in .claude/agents/gap-finder.md .claude/agents/gap-writer.md \
                 project/vault/lead-outreach/email-template-us.md \
                 project/vault/lead-outreach/voice-us.md; do
-        [ -f "<home>/lead-outreach-system/$need" ] \
+        [ -f "<repo-root>/$need" ] \
             || { echo "ABORT: custom run missing $need"; exit 1; }
     done
 fi
@@ -1580,7 +1580,7 @@ And add `gap-finder` to the "Never inline … instructions" hard rule list.
 
 Run:
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 grep -c "Step 6.6 — gap enrichment" .claude/commands/fire.md
 grep -c "gap-finder" .claude/commands/fire.md
 grep -c "enrich_gap.py" .claude/commands/fire.md
@@ -1698,7 +1698,7 @@ record.
 
 Run:
 ```bash
-cd <home>/lead-outreach-system
+cd <repo-root>
 grep -c "gap-finder" CLAUDE.md project/CLAUDE.md project/PIPELINE.md
 grep -c "gaps-enriched.json" CLAUDE.md project/PIPELINE.md
 ```
@@ -1721,7 +1721,7 @@ git commit -m "docs: document Stage 5.6 gap enrichment + template-edit draft"
 
 Run:
 ```bash
-cd <home>/lead-outreach-system/project && source tools/venv/bin/activate
+cd <repo-root>/project && source tools/venv/bin/activate
 pytest tests/ -v
 ```
 Expected: all tests pass (existing + the new text_guards / enrich_gap / draft_custom / draft_emails_dash tests).

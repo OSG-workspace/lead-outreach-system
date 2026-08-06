@@ -16,7 +16,7 @@ no email is written without a real recipient (kill-on-fallback).
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
+`project/vault/lead-outreach/voice-us.md`
 — canonical spec for tone, salutation, no-money rule, keep-the-link rule, subject
 format, no-em-dash rule, gap/evidence/fill structure. Missing → abort, don't improvise.
 

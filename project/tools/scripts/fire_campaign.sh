@@ -116,7 +116,11 @@ if [ "$DRAFT_MODE" = "custom" ] && [ ! -s "$TPL/vertical.txt" ]; then
     echo "ABORT: $TPL/vertical.txt missing/empty — custom runs need an explicit vertical."
     exit 1
 fi
-[ -f "vault/lead-outreach/sent-log.md" ] || { echo "ABORT: vault not initialized (sent-log.md missing)."; exit 1; }
+# The vault is per-operator and never in the repo, so a fresh clone has none.
+# Create it from the tracked skeleton rather than aborting — idempotent, and it
+# never overwrites an existing file, so a live vault is untouched.
+bash tools/scripts/bootstrap_vault.sh
+[ -f "vault/lead-outreach/sent-log.md" ] || { echo "ABORT: vault bootstrap failed (sent-log.md still missing)."; exit 1; }
 
 # --- always a completely NEW dated run folder ---
 SLUG="$(date +%Y-%m-%d)-$BASE"; COUNTER=1

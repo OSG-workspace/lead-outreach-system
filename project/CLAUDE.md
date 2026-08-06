@@ -182,7 +182,7 @@ Once Step 1 resolved the base, execution is exactly ONE command — do NOT scan
 `runs/`, inspect previous runs, read pipeline code, or rebuild any bash:
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <your-checkout>/project
 bash tools/scripts/fire_campaign.sh <SLUG_BASE>          # add --dry-run to preview, --plan to trace
 ```
 

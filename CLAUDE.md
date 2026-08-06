@@ -73,7 +73,16 @@ The send side also runs itself: `com.osg.linkedin-daily` (launchd) executes
 └── _stray-outputs/            ← loose JSON that was sitting in the repo root
 ```
 
-`<home>/lead-outreach-system` is a **symlink to this folder**. Keep it.
+**A path without spaces matters.** If your checkout lives somewhere with a
+space in the name, create a symlink that has none and address the system
+through it — the launchd plist, `linkedin/cron.txt` and `tools/venv/bin/activate`
+all need a space-free absolute path:
+
+```bash
+ln -s "/path/to/lead-outreach system" "$HOME/lead-outreach-system"
+```
+
+Deleting that symlink breaks the daily autopilot on such a checkout.
 The launchd plist, `linkedin/cron.txt`, `tools/venv/bin/activate` and
 `project/CLAUDE.md` all address the system through that path, and it has no space
 in it. Deleting it breaks the daily autopilot.
@@ -81,7 +90,7 @@ in it. Deleting it breaks the daily autopilot.
 ## Vault
 
 Canonical memory is the real Obsidian vault:
-`<home>/Documents/Obsidian Vault/lead-outreach` (`OBSIDIAN_VAULT_PATH`
+your Obsidian vault (`OBSIDIAN_VAULT_PATH`
 in `.env`). `project/vault/lead-outreach/` is the copy the scripts read via the
 relative `vault/...` path from the `project/` cwd. There is exactly one
 `sent-log.md` that matters — never introduce a second.

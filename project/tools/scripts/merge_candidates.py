@@ -206,8 +206,15 @@ def resolve_ok(domain: str) -> bool:
 
 
 def drop_nonexistent(rows: list[str]) -> tuple[list[str], int]:
-    """Filter out candidate rows whose domain does not resolve (parallel DNS)."""
-    if not rows:
+    """Filter out candidate rows whose domain does not resolve (parallel DNS).
+
+    MERGE_SKIP_DNS=1 disables the check. Set it in tests: their fixtures are
+    deliberately fake hostnames, so a live DNS lookup drops every row and the
+    assertions fail for a reason that has nothing to do with merge logic. It
+    also makes the suite hermetic — no network, no resolver flakiness, faster.
+    Never set it in production: this net is what catches typo'd and invented
+    hostnames before they reach fetch."""
+    if not rows or os.environ.get("MERGE_SKIP_DNS") == "1":
         return rows, 0
     from concurrent.futures import ThreadPoolExecutor
     domains = [_norm_domain(r.split("|")[0]) for r in rows]

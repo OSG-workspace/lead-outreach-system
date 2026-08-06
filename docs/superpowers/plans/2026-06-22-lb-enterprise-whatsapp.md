@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Repo root: `<home>/lead-outreach-system`. Scripts run from `project/` cwd; `python3 tools/scripts/...`.
+- Repo root: `<repo-root>`. Scripts run from `project/` cwd; `python3 tools/scripts/...`.
 - New sourcing agent country tag is always `LB`.
 - Message identity: `David Geha, a third-year engineering student at AUB`. NOT "from Automate".
 - Social proof line: `I work with a team building custom AI systems for clients across Lebanon, the GCC, and India.` Never "small team".
@@ -30,7 +30,7 @@
 - Create: `project/vault/lead-outreach/voice-lb-wa.md`
 
 **Interfaces:**
-- Produces: the canonical voice spec the `wa-writer` agent reads first (Task 3 consumes it by absolute path `<home>/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`).
+- Produces: the canonical voice spec the `wa-writer` agent reads first (Task 3 consumes it by absolute path `<repo-root>/project/vault/lead-outreach/voice-lb-wa.md`).
 
 - [ ] **Step 1: Write the voice spec file**
 
@@ -265,7 +265,7 @@ does by hand.
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`
+`<repo-root>/project/vault/lead-outreach/voice-lb-wa.md`
 If it is missing, abort and report. Do not improvise voice.
 
 ## Input (from orchestrator)
@@ -985,7 +985,7 @@ Expected: lists all 8 files and prints `READY`.
 - [ ] **Step 6: Force-add the template (runs/ is gitignored) and commit**
 
 ```bash
-cd <home>/lead-outreach-system
+cd <repo-root>
 git add -f project/runs/2026-06-22-lb-enterprise/icp.yaml \
             project/runs/2026-06-22-lb-enterprise/queries.txt \
             project/runs/2026-06-22-lb-enterprise/countries.txt \

@@ -13,7 +13,7 @@ task this business does by hand.
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
+`project/vault/lead-outreach/voice-us.md`
 — the canonical spec for tone, salutation, no-money rule, keep-the-link rule,
 subject format, no-em-dash rule, and gap/evidence/fill structure. If it's
 missing, abort and report — do not improvise voice.

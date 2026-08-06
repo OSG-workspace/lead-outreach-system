@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Pre-commit guard: refuse to stage credentials, contact PII, or run artifacts.
+#
+# .gitignore already excludes all of it. This is the second line of defence, for
+# the cases .gitignore cannot catch: `git add -f`, a renamed vault, a key pasted
+# into a source file, a run folder copied somewhere new. In a repo whose whole
+# job is storing who you emailed, one bad commit is public forever.
+#
+# Install:  bash tools/git-hooks/install.sh
+# Bypass (only if you are certain): git commit --no-verify
+set -uo pipefail
+
+staged() { git diff --cached --name-only --diff-filter=ACMR; }
+fail=0
+red()  { printf '\033[31m%s\033[0m\n' "$1"; }
+
+# --- 1. paths that must never be committed --------------------------------
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    case "$f" in
+        *.env|.env|*/.env|*.env.local)
+            red "BLOCKED  $f  — credentials file"; fail=1 ;;
+        project/vault/*)
+            [ "$f" = "project/vault/README.md" ] || {
+                red "BLOCKED  $f  — vault memory (contact PII + per-operator ledgers)"; fail=1; }
+            ;;
+        */sent-log.md|sent-log.md|*/bounce-list.md|*/sourced-log.txt|*/qualified-pending.jsonl)
+            red "BLOCKED  $f  — outreach history / contact PII"; fail=1 ;;
+        runs/*|*/runs/*|*/raw_html/*)
+            red "BLOCKED  $f  — run artifact (scraped pages, per-lead records)"; fail=1 ;;
+        *.wwebjs_auth/*|*.wwebjs_cache/*)
+            red "BLOCKED  $f  — WhatsApp session credentials"; fail=1 ;;
+    esac
+done < <(staged)
+
+# --- 2. secret material inside otherwise-fine files ------------------------
+# Placeholder forms (xkeysib-xxxx…, AIza…xxxx) are allowed so .env.example works.
+PAT='xkeysib-[A-Za-z0-9]{25,}|AIza[0-9A-Za-z_-]{33,}|sk-[A-Za-z0-9]{32,}|ghp_[A-Za-z0-9]{36,}|xox[baprs]-[0-9A-Za-z-]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY-----'
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ -f "$f" ] || continue
+    if git show ":$f" 2>/dev/null | grep -qE "$PAT"; then
+        if git show ":$f" 2>/dev/null | grep -E "$PAT" | grep -qvE 'x{8,}|X{8,}|<[A-Za-z_-]+>|YOUR_|EXAMPLE'; then
+            red "BLOCKED  $f  — looks like a live API key or private key"
+            git show ":$f" | grep -nE "$PAT" | grep -vE 'x{8,}|X{8,}|<[A-Za-z_-]+>|YOUR_|EXAMPLE' | head -3 | sed 's/^/           /'
+            fail=1
+        fi
+    fi
+done < <(staged)
+
+if [ "$fail" -ne 0 ]; then
+    echo
+    red "commit aborted by tools/git-hooks/pre-commit"
+    echo "Unstage the file(s) above, or run with --no-verify if you are certain."
+    exit 1
+fi
+exit 0

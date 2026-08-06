@@ -19,8 +19,8 @@
 - [ ] **Step 1: Create the tests directory**
 
 ```bash
-mkdir -p <home>/lead-outreach-system/project/tests
-touch <home>/lead-outreach-system/project/tests/__init__.py
+mkdir -p <repo-root>/project/tests
+touch <repo-root>/project/tests/__init__.py
 ```
 
 - [ ] **Step 2: Write the failing tests**
@@ -94,7 +94,7 @@ def test_merge_skips_blank_and_comment_lines(tmp_path):
 - [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 pytest tests/test_merge_candidates.py -v 2>&1 | head -20
 ```
@@ -104,8 +104,8 @@ Expected: `ModuleNotFoundError: No module named 'merge_candidates'`
 - [ ] **Step 4: Commit the tests**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tests/
-git -C <home>/lead-outreach-system/project commit -m "test: add merge_candidates tests"
+git -C <repo-root>/project add tests/
+git -C <repo-root>/project commit -m "test: add merge_candidates tests"
 ```
 
 ---
@@ -194,7 +194,7 @@ if __name__ == "__main__":
 - [ ] **Step 2: Run tests — expect all to pass**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 pytest tests/test_merge_candidates.py -v
 ```
@@ -204,8 +204,8 @@ Expected: `7 passed`
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tools/scripts/merge_candidates.py
-git -C <home>/lead-outreach-system/project commit -m "feat: add merge_candidates.py (Stage 3)"
+git -C <repo-root>/project add tools/scripts/merge_candidates.py
+git -C <repo-root>/project commit -m "feat: add merge_candidates.py (Stage 3)"
 ```
 
 ---
@@ -300,7 +300,7 @@ def test_append_rows_skips_failed(tmp_path):
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 pytest tests/test_persist_sent_log.py -v 2>&1 | head -10
 ```
@@ -310,8 +310,8 @@ Expected: `ModuleNotFoundError: No module named 'persist_sent_log'`
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tests/test_persist_sent_log.py
-git -C <home>/lead-outreach-system/project commit -m "test: add persist_sent_log tests"
+git -C <repo-root>/project add tests/test_persist_sent_log.py
+git -C <repo-root>/project commit -m "test: add persist_sent_log tests"
 ```
 
 ---
@@ -410,7 +410,7 @@ if __name__ == "__main__":
 - [ ] **Step 2: Run tests — expect all to pass**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 pytest tests/test_persist_sent_log.py -v
 ```
@@ -420,8 +420,8 @@ Expected: `6 passed`
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tools/scripts/persist_sent_log.py
-git -C <home>/lead-outreach-system/project commit -m "feat: add persist_sent_log.py (Stage 8)"
+git -C <repo-root>/project add tools/scripts/persist_sent_log.py
+git -C <repo-root>/project commit -m "feat: add persist_sent_log.py (Stage 8)"
 ```
 
 ---
@@ -478,7 +478,7 @@ echo "Fetched ${fetched} / ${total} → ${OUT_DIR}"
 - [ ] **Step 2: Make it executable**
 
 ```bash
-chmod +x <home>/lead-outreach-system/project/tools/scripts/fetch_html.sh
+chmod +x <repo-root>/project/tools/scripts/fetch_html.sh
 ```
 
 - [ ] **Step 3: Smoke test with 3 known domains**
@@ -486,7 +486,7 @@ chmod +x <home>/lead-outreach-system/project/tools/scripts/fetch_html.sh
 ```bash
 cd /tmp && mkdir -p test_fetch/raw_html
 printf 'automatelb.com|Automate|AE|clinic|5\ngoogle.com|Google|AE|clinic|1\n' > test_fetch/candidates-all.txt
-bash <home>/lead-outreach-system/project/tools/scripts/fetch_html.sh test_fetch
+bash <repo-root>/project/tools/scripts/fetch_html.sh test_fetch
 ls test_fetch/raw_html/
 ```
 
@@ -495,8 +495,8 @@ Expected: `automatelb.com.html  google.com.html` and `Fetched 2 / 2`
 - [ ] **Step 4: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tools/scripts/fetch_html.sh
-git -C <home>/lead-outreach-system/project commit -m "feat: add fetch_html.sh (Stage 4)"
+git -C <repo-root>/project add tools/scripts/fetch_html.sh
+git -C <repo-root>/project commit -m "feat: add fetch_html.sh (Stage 4)"
 ```
 
 ---
@@ -710,7 +710,7 @@ for l in leads[:10]:
 - [ ] **Step 2: Smoke test against last run**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 python tools/scripts/extract_leads.py \
     --run-dir runs/2026-05-23-gcc-consumer-chains-fast \
@@ -722,8 +722,8 @@ Expected: `Extracted 70 leads` (same count as the original run)
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tools/scripts/extract_leads.py
-git -C <home>/lead-outreach-system/project commit -m "feat: refactor extract_leads.py to tools/scripts/ with --run-dir"
+git -C <repo-root>/project add tools/scripts/extract_leads.py
+git -C <repo-root>/project commit -m "feat: refactor extract_leads.py to tools/scripts/ with --run-dir"
 ```
 
 ---
@@ -866,8 +866,8 @@ Expected: `Drafted 70 emails` (matches original)
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tools/scripts/draft_emails.py
-git -C <home>/lead-outreach-system/project commit -m "feat: refactor draft_emails.py to tools/scripts/ with --run-dir"
+git -C <repo-root>/project add tools/scripts/draft_emails.py
+git -C <repo-root>/project commit -m "feat: refactor draft_emails.py to tools/scripts/ with --run-dir"
 ```
 
 ---
@@ -1050,8 +1050,8 @@ Expected: `DRY-RUN mode` then `Sending 3 emails, pace=30s, dry_run=True` then 3 
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add tools/scripts/send.py
-git -C <home>/lead-outreach-system/project commit -m "feat: refactor send.py to tools/scripts/ with --run-dir"
+git -C <repo-root>/project add tools/scripts/send.py
+git -C <repo-root>/project commit -m "feat: refactor send.py to tools/scripts/ with --run-dir"
 ```
 
 ---
@@ -1064,7 +1064,7 @@ git -C <home>/lead-outreach-system/project commit -m "feat: refactor send.py to 
 - [ ] **Step 1: Create the agents directory and write the file**
 
 ```bash
-mkdir -p <home>/lead-outreach-system/project/agents
+mkdir -p <repo-root>/project/agents
 ```
 
 Create `agents/source-agent.md`:
@@ -1167,7 +1167,7 @@ Write all lines to the file path you were given as `output_path`. Append as you 
 - [ ] **Step 2: Verify the file was created**
 
 ```bash
-wc -l <home>/lead-outreach-system/project/agents/source-agent.md
+wc -l <repo-root>/project/agents/source-agent.md
 ```
 
 Expected: `~80 lines`
@@ -1175,8 +1175,8 @@ Expected: `~80 lines`
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add agents/source-agent.md
-git -C <home>/lead-outreach-system/project commit -m "feat: add agents/source-agent.md (Haiku sourcing memory)"
+git -C <repo-root>/project add agents/source-agent.md
+git -C <repo-root>/project commit -m "feat: add agents/source-agent.md (Haiku sourcing memory)"
 ```
 
 ---
@@ -1323,8 +1323,8 @@ Report to user: "Campaign complete. Sent N/M. Sent-log updated."
 - [ ] **Step 2: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add agents/run-kickoff.md
-git -C <home>/lead-outreach-system/project commit -m "feat: add agents/run-kickoff.md (orchestrator memory)"
+git -C <repo-root>/project add agents/run-kickoff.md
+git -C <repo-root>/project commit -m "feat: add agents/run-kickoff.md (orchestrator memory)"
 ```
 
 ---
@@ -1410,8 +1410,8 @@ Each sourcing agent is a fresh Haiku instance. It reads `agents/source-agent.md`
 - [ ] **Step 2: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add PIPELINE.md
-git -C <home>/lead-outreach-system/project commit -m "feat: add PIPELINE.md (master pipeline contract)"
+git -C <repo-root>/project add PIPELINE.md
+git -C <repo-root>/project commit -m "feat: add PIPELINE.md (master pipeline contract)"
 ```
 
 ---
@@ -1459,8 +1459,8 @@ notes: ""
 - [ ] **Step 3: Commit**
 
 ```bash
-git -C <home>/lead-outreach-system/project add CLAUDE.md runs/run-config-template.md
-git -C <home>/lead-outreach-system/project commit -m "feat: update CLAUDE.md + add run-config template"
+git -C <repo-root>/project add CLAUDE.md runs/run-config-template.md
+git -C <repo-root>/project commit -m "feat: update CLAUDE.md + add run-config template"
 ```
 
 ---
@@ -1472,7 +1472,7 @@ git -C <home>/lead-outreach-system/project commit -m "feat: update CLAUDE.md + a
 - [ ] **Step 1: Run the full test suite**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 pytest tests/ -v
 ```
@@ -1482,7 +1482,7 @@ Expected: all tests pass
 - [ ] **Step 2: Simulate a new run with a test folder**
 
 ```bash
-cd <home>/lead-outreach-system/project
+cd <repo-root>/project
 source tools/venv/bin/activate
 
 # Create a test run
@@ -1517,6 +1517,6 @@ Expected: each stage prints success, final persist shows 3 DRY entries appended
 - [ ] **Step 3: Commit test results note**
 
 ```bash
-git -C <home>/lead-outreach-system/project add -A
-git -C <home>/lead-outreach-system/project commit -m "chore: full-haiku pipeline complete — all stages portable, agents wired"
+git -C <repo-root>/project add -A
+git -C <repo-root>/project commit -m "chore: full-haiku pipeline complete — all stages portable, agents wired"
 ```

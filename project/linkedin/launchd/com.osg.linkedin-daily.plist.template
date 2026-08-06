@@ -15,12 +15,12 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string><home>/lead-outreach-system/project/linkedin/scripts/autopilot.sh</string>
+        <string>__LINKEDIN_DIR__/scripts/autopilot.sh</string>
         <string>--live</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string><home>/lead-outreach-system/project/linkedin</string>
+    <string>__LINKEDIN_DIR__</string>
 
     <!-- 09:10, Monday to Friday. The senders pace themselves across the
          09:15-17:30 window and re-derive the ramp themselves, so starting the
@@ -35,9 +35,9 @@
     </array>
 
     <key>StandardOutPath</key>
-    <string><home>/lead-outreach-system/project/linkedin/state/daily.log</string>
+    <string>__LINKEDIN_DIR__/state/daily.log</string>
     <key>StandardErrorPath</key>
-    <string><home>/lead-outreach-system/project/linkedin/state/daily.log</string>
+    <string>__LINKEDIN_DIR__/state/daily.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

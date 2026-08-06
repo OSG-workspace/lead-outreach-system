@@ -122,6 +122,6 @@ since the move to map/places sourcing.
 
 ## Permissions (root-cause fix for past dispatch failures)
 
-`.claude/settings.json` is loaded from the **session cwd** = `<home>/lead-outreach-system/`. Sub-agents inherit these permissions. The settings.json MUST include `WebSearch` (and `WebFetch`, `Bash`, etc.) in `permissions.allow` — otherwise sub-agents will hit "permission denied" mid-run.
+`.claude/settings.json` is loaded from the **session cwd** = the repo root. Sub-agents inherit these permissions. The settings.json MUST include `WebSearch` (and `WebFetch`, `Bash`, etc.) in `permissions.allow` — otherwise sub-agents will hit "permission denied" mid-run.
 
 The legacy `project/.claude/settings.json` is NOT loaded by Claude Code because it's not at cwd. That file is kept for reference only.

@@ -29,7 +29,7 @@ Both run the **identical** Haiku sub-agents (same definitions/tools/model) and t
 ## 1. File map (✅ live · 🗄️ legacy/reference)
 
 ```
-<home>/lead-outreach-system/            ← SESSION cwd (Claude Code loads .claude from here)
+<repo-root>/                                      ← SESSION cwd (Claude Code loads .claude from here)
 │
 ├── .claude/
 │   ├── settings.json                                     ✅ authoritative permissions (orchestrator + ALL sub-agents)
