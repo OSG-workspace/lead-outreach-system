@@ -1,0 +1,13 @@
+{
+  "_comment": "Lebanon NGO/international-organization pitch. User's exact fixed copy, no signal variation. Salutation slot is the only change from the source text. No em-dashes. Renders through email_template.py at send.",
+  "country_names": {
+    "LB": "Lebanon"
+  },
+  "vertical_names": {
+    "ngo": "NGOs and international organizations"
+  },
+  "default_vertical": "NGOs and international organizations",
+  "subject_template": "The time your team loses on donor reports",
+  "body_template": "Hi {salutation},\n\nHope you and the team are doing well. Spending time around the sector, I've noticed the same thing in almost every organization: the people hired to run programs end up cleaning field data by hand and rewriting the same results into a different template for each donor. Reporting season swallows entire weeks, and it comes straight out of program time.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG (https://osgdev.com). We're AI consultants: we find where an organization is losing time and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you have 20 minutes this week for a call so we can go through the details? If it's simpler, you can reach me directly on +961 76 412 978.\n\nKind regards,\nDavid Geha\nOSG\nhttps://osgdev.com\nInstagram: dave.automates",
+  "wa_body_template": "Hello {salutation},\n\nSpending time around the sector, I've noticed the same thing in almost every organization: the people hired to run programs end up cleaning field data by hand and rewriting the same results into a different template for each donor. Reporting season swallows entire weeks.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG. We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call to go through the details?\n\nDavid Geha, OSG\nhttps://osgdev.com\nInstagram: dave.automates"
+}

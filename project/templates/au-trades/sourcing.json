@@ -1,0 +1,36 @@
+{
+  "_comment": "AU emergency-trades Stage 2. Measured against the live Overpass endpoint 2026-08-03 over the whole AU bbox (-44,112,-10,154): the original craft~plumber|electrician|hvac selector yields 450 elements / 161 with a website tag FOR ALL OF AUSTRALIA, and the city ledger showed 16/16 metros swept, which is why the 08-03 fire sourced 0. Two fixes are wired here. (1) More OSM ground: the added targets are separate tag keys one selector cannot express, worth ~81 further AU websites, each under its OWN vertical because source_overpass.py keys the city ledger by vertical and 'trades' is already fully burned. (2) The real fix: a places source. OSM indexes premises, and a mobile trade business is not a place on a map, so Google Places is where these businesses actually are. Deliberately NOT included: shop=doityourself (809/313) and shop=trade (506/186) are hardware and trade-supply RETAIL, and shop=electrical (228/61) is mostly electrical-goods retail; all three contradict the owner-operated callout ICP in fit_criteria.txt. Add them only if volume is wanted over fit.",
+  "max_per_run": 350,
+  "sources": [
+    {
+      "type": "map",
+      "targets": [
+        {
+          "_note": "original target: 161 AU websites, ledger 'trades' fully swept 2026-07-28..07-31. Kept so it resumes automatically when places.txt gains rows or OSM is re-surveyed.",
+          "selector": "\"craft\"~\"^(plumber|electrician|hvac)$\"",
+          "vertical": "trades"
+        },
+        {
+          "_note": "emergency trades the old selector missed: glaziery 74/24, roofer 24/10, locksmith 12/5, roofing 1/1. All phone-led 24/7 callout work, so the existing pitch copy fits unchanged.",
+          "selector": "\"craft\"~\"^(locksmith|glaziery|roofer|roofing)$\"",
+          "vertical": "trades-emergency"
+        },
+        {
+          "_note": "same trades filed under shop= instead of craft=: locksmith 122/36, plumbing 6/4, hvac 6/1.",
+          "selector": "\"shop\"~\"^(locksmith|plumbing|hvac)$\"",
+          "vertical": "trades-shop"
+        }
+      ]
+    },
+    {
+      "type": "places",
+      "_note": "Google Places API (New), adaptive quadtree over the same places.txt. Needs GOOGLE_PLACES_API_KEY in project/.env; without it this source reports no fresh ground (exit 8) and the run continues on the other sources, so this line is safe to ship before the key exists. included_type values must be valid Places API (New) Table A types: an unknown type makes the sweep return nothing and halts loudly. No \"tier\" set here, so this defaults to Pro (id+name only, $32/1k) rather than Enterprise ($35/1k, returns websiteUri/phone) — the Places API ToS restricts persisting website/phone Content, so this campaign never requests it. run_fire.py auto-enables resolve_domains for that reason: Pro-tier results are name-only until Stage 2.5 independently proves a domain against the business's own site (search + fetch + name-token match), which this pipeline already does for weakly-mapped OSM markets.",
+      "targets": [
+        {"included_type": "plumber", "vertical": "trades"},
+        {"included_type": "electrician", "vertical": "trades"},
+        {"included_type": "locksmith", "vertical": "trades"},
+        {"included_type": "roofing_contractor", "vertical": "trades"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "Lebanon FMCG distributors/industrial groups pitch. User's exact fixed copy, no signal variation. Salutation slot is the only change from the source text. No em-dashes. Renders through email_template.py at send.",
+  "country_names": {
+    "LB": "Lebanon"
+  },
+  "vertical_names": {
+    "fmcg": "distributors",
+    "industrial": "industrial groups"
+  },
+  "default_vertical": "distributors",
+  "subject_template": "Your reps and your receivables",
+  "body_template": "Hi {salutation},\n\nHope the month is going well for you. I've been studying how distribution works in Lebanon, and I've noticed a pattern most people treat as normal: the rep builds each shop's order from memory, and at the end of the month the office discovers which shops under-ordered and which ones still haven't paid. Two quiet leaks, every single cycle, across hundreds of points of sale.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG (https://osgdev.com). We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call so we can go through the details together? You can also reach me directly on +961 76 412 978, whichever is easier.\n\nBest,\nDavid Geha\nOSG\nhttps://osgdev.com\nInstagram: dave.automates",
+  "wa_body_template": "Hello {salutation},\n\nI've been studying how distribution works in Lebanon, and there's a pattern most people treat as normal: the rep builds each shop's order from memory, and at the end of the month the office discovers which shops under-ordered and which still haven't paid. Two quiet leaks, every single cycle.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG. We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call to go through the details?\n\nDavid Geha, OSG\nhttps://osgdev.com\nInstagram: dave.automates"
+}

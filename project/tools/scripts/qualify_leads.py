@@ -37,6 +37,16 @@ p.add_argument("--cap", type=int, default=int(os.environ.get("ENRICH_MAX_LEADS",
                     "qualified lead in a normal run; raise for huge sweeps.")
 p.add_argument("--min-score", type=int, default=int(os.environ.get("QUALIFY_MIN_SCORE", "82")),
                help="drop leads below this extract score")
+# On a LinkedIn run the outreach surface is a person's profile, so every gate in
+# this file that judges a MAILBOX is measuring the wrong thing. Two consequences,
+# both off by default so email campaigns are untouched:
+#   1. freemail-only / no-email leads are kept (LinkedIn never uses the address).
+#   2. NOTHING is written to the permanent disqualified ledger for an email
+#      reason. Without this a LinkedIn run would blacklist a company from every
+#      FUTURE email campaign purely for not publishing an address — a permanent
+#      loss caused by a channel that never needed the address.
+p.add_argument("--linkedin-run", action="store_true",
+               help="exempt email-quality gates and never blacklist for email reasons")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
@@ -79,23 +89,75 @@ def main() -> None:
 
     dropped_freemail = dropped_score = dropped_signal = dropped_small_hotel = 0
     kept: list[dict] = []
+    disqualified: list[tuple[str, str]] = []   # (domain, reason) -> permanent block
+
+    def _domain(lead: dict) -> str:
+        d = (lead.get("domain") or "").strip().lower()
+        if d:
+            return d
+        site = (lead.get("website") or "").strip().lower()
+        return site.split("//")[-1].split("/")[0].removeprefix("www.")
+
     for l in leads:
-        if l.get("email_class") == "personal":
+        # A LinkedIn lead is judged by the person gates (qualify_people.py), not
+        # by its mailbox. Skipping the email-quality gates here is what keeps the
+        # audience alive; the LinkedIn person gates are strictly harder, not softer.
+        email_exempt = args.linkedin_run and l.get("email_class") in ("personal", "none")
+        if l.get("email_class") == "personal" and not email_exempt:
             dropped_freemail += 1
+            disqualified.append((_domain(l), "freemail-only"))
             continue
         if l.get("signal") in DEAD_SIGNALS:
             dropped_signal += 1
+            disqualified.append((_domain(l), f"dead-signal:{l.get('signal')}"))
             continue
-        if int(l.get("score", 0)) < args.min_score:
+        if int(l.get("score", 0)) < args.min_score and not email_exempt:
             dropped_score += 1
+            disqualified.append((_domain(l), f"score<{args.min_score}"))
             continue
         # Big / high-call-volume hotel gate: drop properties with no scale signal.
         if require_hotel_volume and l.get("vertical", "").lower() in HOTEL_VERTICALS:
             tier = l.get("hotel_volume", "low")
             if VOLUME_RANK.get(tier, 0) < min_volume:
                 dropped_small_hotel += 1
+                disqualified.append((_domain(l), "hotel-volume-too-low"))
                 continue
         kept.append(l)
+
+    # PROVEN-UNQUALIFIED ledger (user directive 2026-07-27). Only a lead this gate
+    # actually judged and rejected is blocked from future runs. Merely having been
+    # *sourced* is not proof of anything, and a lead that QUALIFIES must stay
+    # reachable until it is genuinely contacted — so qualified-but-not-yet-contacted
+    # domains are deliberately NOT written here.
+    # On a LinkedIn run, an email-quality verdict is not evidence about the
+    # business, so it must never reach the PERMANENT ledger — that ledger blocks
+    # a domain from every future run on ANY channel. Only judgements about the
+    # business itself (dead signal, too small) are proof and survive.
+    if args.linkedin_run:
+        kept_reasons = [(d, r) for d, r in disqualified
+                        if r.startswith("dead-signal") or r.startswith("hotel-volume")]
+        if len(kept_reasons) != len(disqualified):
+            print(f"  linkedin-run: {len(disqualified) - len(kept_reasons)} email-quality "
+                  f"verdicts NOT written to the permanent disqualified ledger")
+        disqualified = kept_reasons
+
+    if disqualified:
+        ledger = Path("vault/lead-outreach/disqualified-log.txt")
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        from datetime import date
+        today = date.today().isoformat()
+        run_slug = ROOT.name
+        seen_before = set()
+        if ledger.exists():
+            for line in ledger.read_text().splitlines():
+                part = line.split("|", 1)[0].strip().lower()
+                if part:
+                    seen_before.add(part)
+        with ledger.open("a") as f:
+            for dom, reason in disqualified:
+                if dom and dom not in seen_before:
+                    seen_before.add(dom)
+                    f.write(f"{dom}|{today}|{run_slug}|{reason}\n")
 
     # Rank by fit: bigger/high-volume hotels first, then score, then
     # person-before-role, then bigger chains first.

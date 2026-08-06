@@ -1,0 +1,22 @@
+{
+  "_comment": "GCC outreach-system campaign, built from the 2026-07-27 GTM research. UAE-first: Dubai + Sharjah real estate brokerage is the beachhead (measured 2026-07-27: 529 named brokerages across the two, only 47 with a website tag, 482 name-only \u2014 which is why resolve_domains is ON). Education and insurance follow as Tier-2. KSA cities trail the UAE ones. NOTE: the research's other Tier-1 vertical (Salla/Zid COD merchants) is NOT sourceable here \u2014 online stores have no OSM presence at all.",
+  "targets": [
+    {
+      "selector": "\"office\"=\"estate_agent\"",
+      "vertical": "realestate"
+    },
+    {
+      "selector": "\"amenity\"~\"college|language_school|driving_school\"",
+      "vertical": "education"
+    },
+    {
+      "selector": "\"office\"=\"insurance\"",
+      "vertical": "insurance"
+    }
+  ],
+  "max_per_run": 360,
+  "resolve_domains": true,
+  "resolve_query": "{name} {city} official website",
+  "resolve_max": 300,
+  "resolve_min_name_tokens": 2
+}

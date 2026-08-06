@@ -1,0 +1,11 @@
+# Lebanon — national sweep (Beirut is the bulk of the market)
+Beirut|LB|33.8938|35.5018|0.09
+Jounieh|LB|33.9808|35.6178|0.05
+Tripoli|LB|34.4367|35.8497|0.06
+Sidon|LB|33.5571|35.3729|0.05
+Tyre|LB|33.2705|35.2038|0.05
+Zahle|LB|33.8463|35.9019|0.05
+Byblos|LB|34.1230|35.6519|0.04
+Baabda|LB|33.8339|35.5442|0.04
+Antelias|LB|33.9139|35.5872|0.04
+Jal el Dib|LB|33.8944|35.5906|0.03

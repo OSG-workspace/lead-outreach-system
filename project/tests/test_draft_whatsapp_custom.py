@@ -15,11 +15,11 @@ def _run(run_dir, phase):
 
 def _lead(**over):
     base = {
-        "lead_id": "web-aishti-com", "lead_slug": "aishti-com", "name": "Aishti",
-        "website": "examplebrand.com", "vertical": "retail", "country_code": "LB",
-        "score": 90, "contact_first_name": "Tony", "contact_last_name": "Salame",
-        "contact_title": "Mr.", "contact_phone": "+96170123456",
-        "contact_email": "founder@examplebrand.com",
+        "lead_id": "web-aishti-com", "lead_slug": "aishti-com", "name": "Lumiere Brands",
+        "website": "lumierebrands.com", "vertical": "retail", "country_code": "LB",
+        "score": 90, "contact_first_name": "Firstname", "contact_last_name": "Lastname",
+        "contact_title": "Mr.", "contact_phone": "+96170000000",
+        "contact_email": "founder@lumierebrands.com",
     }
     base.update(over)
     return base
@@ -27,8 +27,8 @@ def _lead(**over):
 
 def _good_body():
     return (
-        "Hello Mr. Salame,\n\n"
-        "Aishti routes a lot of stock and order questions through your team by hand.\n\n"
+        "Hello Mr. Lastname,\n\n"
+        "Lumiere Brands routes a lot of stock and order questions through your team by hand.\n\n"
         "I'm David Geha, a third-year engineering student at AUB. I work with a team "
         "building custom AI systems for clients across Lebanon, the GCC, and India, and "
         "we'd take that repetitive work off your team. You own the system, no platform "
@@ -59,9 +59,43 @@ def test_merge_keeps_valid_draft(tmp_path):
     rows = [json.loads(x) for x in (run / "whatsapp-drafted.json").read_text().splitlines() if x.strip()]
     assert len(rows) == 1
     d = rows[0]
-    assert d["to_jid"] == "96170123456@c.us"
-    assert d["salutation"] == "Mr. Salame"
+    assert d["to_jid"] == "96170000000@c.us"
+    assert d["salutation"] == "Mr. Lastname"
     assert "automatelb" not in d["body_text"].lower()
+
+
+def test_merge_appends_instagram_handle(tmp_path):
+    run = _setup(tmp_path, [_lead()],
+                 [{"lead_id": "web-aishti-com", "lead_slug": "aishti-com",
+                   "workflow_gaps": "g", "how_we_help": "h", "body_text": _good_body()}])
+    r = _run(run, "merge")
+    assert r.returncode == 0, r.stderr + r.stdout
+    rows = [json.loads(x) for x in (run / "whatsapp-drafted.json").read_text().splitlines() if x.strip()]
+    body = rows[0]["body_text"]
+    assert body.endswith("David Geha\nInstagram: dave.automates")
+    assert body.count("dave.automates") == 1  # writer-supplied handle is not duplicated
+
+
+def test_merge_keeps_writer_supplied_instagram_handle(tmp_path):
+    # The handle contains "automate", so it must survive the brand gate.
+    body = _good_body() + "\nInstagram: dave.automates"
+    run = _setup(tmp_path, [_lead()],
+                 [{"lead_id": "web-aishti-com", "lead_slug": "aishti-com",
+                   "workflow_gaps": "g", "how_we_help": "h", "body_text": body}])
+    r = _run(run, "merge")
+    assert r.returncode == 0, r.stderr + r.stdout
+    rows = [json.loads(x) for x in (run / "whatsapp-drafted.json").read_text().splitlines() if x.strip()]
+    assert rows[0]["body_text"].count("dave.automates") == 1
+
+
+def test_merge_still_drops_brand_alongside_instagram_handle(tmp_path):
+    body = (_good_body().replace("David Geha", "David Geha\nOSG, osgdev.com")
+            + "\nInstagram: dave.automates")
+    run = _setup(tmp_path, [_lead()],
+                 [{"lead_id": "web-aishti-com", "lead_slug": "aishti-com",
+                   "workflow_gaps": "g", "how_we_help": "h", "body_text": body}])
+    r = _run(run, "merge")
+    assert r.returncode == 5
 
 
 def test_merge_drops_automate_mention(tmp_path):
@@ -83,7 +117,7 @@ def test_merge_drops_money_talk(tmp_path):
 
 
 def test_merge_drops_bad_salutation(tmp_path):
-    body = _good_body().replace("Hello Mr. Salame,", "Hi there,")
+    body = _good_body().replace("Hello Mr. Lastname,", "Hi there,")
     run = _setup(tmp_path, [_lead()],
                  [{"lead_id": "web-aishti-com", "lead_slug": "aishti-com",
                    "workflow_gaps": "g", "how_we_help": "h", "body_text": body}])

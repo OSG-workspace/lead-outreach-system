@@ -8,8 +8,8 @@ The Automate outreach pipeline. 8 stages. Read this file at the start of every s
 
 | Stage | Script | Input | Output |
 |---|---|---|---|
-| 1 | (Sonnet orchestrator) | queries.txt | dispatches Stage 2 — splits 1 query per batch |
-| 2 | (Haiku sub-agents, **1 per query, max parallelism**) | source-agent.md, 1 query each | candidates-batch-N.txt |
+| 1 | `run_fire.py` (deterministic orchestrator) | fixture control files | run folder resolved, Stage 2 launched |
+| 2 | `tools/scripts/source_overpass.py` (OSM) / `source_places.py` (Places) — **deterministic enumeration, 0 agents, 0 tokens** | sourcing.json, places.txt | candidates-batch-N.txt |
 | 3 | `tools/scripts/merge_candidates.py` | candidates-batch-*.txt | candidates-all.txt |
 | 4 | `tools/scripts/fetch_html.sh` → `fetch_html.py` (**crawl4ai JS-render, multi-page: /, /contact, /about, /team**) | candidates-all.txt | raw_html/{domain}__{slug}.html |
 | 5 | `tools/scripts/extract_leads.py` (scans all pages per domain; computes score, signal, hotel_volume) | raw_html/, candidates-all.txt | leads-extracted.json |
@@ -40,8 +40,6 @@ runs/YYYY-MM-DD-<slug>/
   # ---- CONTROL FILES (inputs you set; cloned forward on bootstrap) ----
   README.md             ← per-run structure + scoring manifest
   icp.yaml              ← scoring rubric / ICP intent
-  queries.txt           ← search queries (one per line → one source-agent each)
-  source_agent.txt      ← which sourcing sub-agent (default source-agent)
   countries.txt         ← ISO-2 country filter (absent → GCC default)
   draft_mode.txt        ← template | custom
   channels.json         ← ["email"] / ["whatsapp"] / both
@@ -108,28 +106,22 @@ All scripts accept `--run-dir <path>` as their only required argument (except fe
 
 The `.env` file at `project/.env` holds `BREVO_MCP_TOKEN`, `BREVO_SENDER_EMAIL`, `BREVO_SENDER_NAME`.
 
-## Sourcing agents
+## Sourcing
 
-Each sourcing agent is a fresh Haiku instance with `subagent_type: source-agent` (defined at `.claude/agents/source-agent.md` at the cwd level — **NOT** at `project/agents/source-agent.md`, that's reference-only). The agent's `tools:` frontmatter is locked to `WebSearch, Write` so it physically cannot reach for Bash, Python, ddgs, or crawl4ai.
+Sourcing dispatches **no agents at all**. `source_overpass.py` enumerates
+OpenStreetMap (and `source_places.py` the Google Places API) directly, emitting
+`candidates-batch-*.txt` in the same pipe-delimited format every later stage
+already reads. Zero LLM tokens, exhaustive per place, and the per-vertical city
+ledger (`vault/lead-outreach/overpass-cities-fired.txt`) guarantees each fire
+opens ground no earlier run covered.
 
-The orchestrator dispatches them in a **single message with N Agent tool calls** with a minimal prompt:
-
-```
-Query: <one search query>
-OutputFile: <absolute path to candidates-batch-XX.txt>
-```
-
-The full role description, output format, country/vertical/branch rules live INSIDE `.claude/agents/source-agent.md`. The orchestrator does not re-inline them.
-
-**Batch size: 1 query per agent** (maximum parallelism). For a 130-query brief, this dispatches ~130 Haiku agents simultaneously. Each agent does 1 WebSearch + Write + done, completing in 15-60 sec. The whole sourcing stage wall-clocks at ~1-2 min (capped by the slowest agent).
-
-Why 1-per-batch instead of 10-per-batch:
-- Slowest-batch latency dominated the old 14-agent setup (3 agents took 19+ min while 11 finished in <80 sec)
-- Smaller per-agent workload = lower variance = faster completion
-- More parallelism = more total queries per minute of wall-clock
+The old agent-per-query "search" method — N Haiku `source-agent`s over
+`queries.txt` — was retired 2026-08-05 together with its six agent definitions
+and the fixtures' `queries.txt`/`fit_criteria.txt` files. No fixture had used it
+since the move to map/places sourcing.
 
 ## Permissions (root-cause fix for past dispatch failures)
 
-`.claude/settings.json` is loaded from the **session cwd** = `<home>/Desktop/lead-outreach-system/`. Sub-agents inherit these permissions. The settings.json MUST include `WebSearch` (and `WebFetch`, `Bash`, etc.) in `permissions.allow` — otherwise sub-agents will hit "permission denied" mid-run.
+`.claude/settings.json` is loaded from the **session cwd** = `<home>/lead-outreach-system/`. Sub-agents inherit these permissions. The settings.json MUST include `WebSearch` (and `WebFetch`, `Bash`, etc.) in `permissions.allow` — otherwise sub-agents will hit "permission denied" mid-run.
 
 The legacy `project/.claude/settings.json` is NOT loaded by Claude Code because it's not at cwd. That file is kept for reference only.

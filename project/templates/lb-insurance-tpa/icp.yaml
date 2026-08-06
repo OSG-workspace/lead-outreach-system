@@ -1,0 +1,23 @@
+icp_name: Lebanon Insurers, TPAs & Hospital Finance Offices
+description: >
+  Third-party administrators and insurers first, then hospital finance/revenue
+  offices. Claims still move as paper: intake, manual retyping, line-by-line
+  checking, and reimbursement delays that show up as complaints in Google
+  reviews and in ICC quarterly claim-volume data. Offer: OSG (David Geha)
+  builds a custom AI system around that exact gap. Fixed, user-approved copy
+  (no signal variation); every send still requires a real named decision-maker
+  with a direct email.
+
+geography: LB
+country_filter: LB
+vertical: insurance
+
+target_person:
+  - Head of Claims (insurers/TPAs)
+  - COO (insurers/TPAs)
+  - CFO (hospitals)
+  - Revenue Cycle Director (hospitals)
+
+draft_mode: template
+no_emdash: true
+keep_signature_link: true

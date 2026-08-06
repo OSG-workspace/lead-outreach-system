@@ -19,7 +19,7 @@ Two phases, both run by the /fire orchestrator:
 
   merge  reads all lead-out-*.json, joins to the qualified leads, enforces BOTH
          the contact contract (real Mr./Mrs.+surname, direct non-generic email)
-         AND the email contract (salutation, no money words, automatelb.com link,
+         AND the email contract (salutation, no money words, osgdev.com link,
          no em/en dashes), de-dups near-identical bodies, and writes
          emails-drafted.json. Output schema matches draft_emails.py /
          draft_custom.py so send_batch_brevo.py + persist work unchanged.
@@ -148,6 +148,19 @@ MONEY_RE = re.compile(
     r"per month|/month|cost|costs|free setup|no monthly|charge|charges|"
     r"dollar|dollars|usd|invoice|subscription)\b", re.IGNORECASE)
 AI_SUBJECT_RE = re.compile(r"\bai\b", re.IGNORECASE)
+
+# Every outreach signature carries the Instagram handle. The HTML shell renders
+# it as a styled signature line; this keeps the plain-text part (Brevo
+# textContent) in sync. Appended, never gated, so no lead is dropped over it.
+INSTAGRAM_LINE = "Instagram: dave.automates"
+INSTAGRAM_RE = re.compile(r"[Ii]nstagram\s*[:@]?\s*@?dave\.automates")
+
+
+def with_instagram(body: str) -> str:
+    body = body.rstrip()
+    return body if INSTAGRAM_RE.search(body) else f"{body}\n{INSTAGRAM_LINE}"
+
+
 GENERIC_LOCAL_PARTS = {
     "info", "contact", "hello", "inquiries", "enquiries", "enquiry", "support",
     "admin", "office", "general", "careers", "career", "hr", "jobs", "recruit",
@@ -201,9 +214,15 @@ def phase_merge() -> None:
         first = (data.get("first_name") or "").strip()
         last = (data.get("last_name") or "").strip()
         title = (data.get("title") or "").strip()
-        if not first or not last or title not in {"Mr.", "Mrs."}:
+        # One name component is enough (per CLAUDE.md salutation contract):
+        # surname + Mr./Mrs., or a bare first name.
+        surname_ok = bool(last) and title in {"Mr.", "Mrs."}
+        if not (surname_ok or first):
             d_name += 1
             continue
+        if title not in {"Mr.", "Mrs."}:
+            title = ""
+        salutation = f"{title} {last}" if surname_ok else first
 
         to_email = (data.get("email") or "").strip().lower()
         if not is_direct_email(to_email):
@@ -213,16 +232,17 @@ def phase_merge() -> None:
         subject = _DASH_RE.sub(", ", (data.get("subject") or "").strip())
         body_text = _DASH_RE.sub(", ", (data.get("body_text") or "").strip())
 
-        if not body_text.startswith(f"Hello {title} ") or last not in body_text.split("\n", 1)[0]:
+        if not body_text.startswith(f"Hello {salutation},"):
             d_salutation += 1
             continue
         if MONEY_RE.search(body_text) or MONEY_RE.search(subject):
             d_money += 1
             continue
-        if "automatelb.com" not in body_text:
+        if "osgdev.com" not in body_text:
             d_link += 1
             continue
         subject = AI_SUBJECT_RE.sub("the", subject).strip()
+        body_text = with_instagram(body_text)
 
         paragraphs = body_text.split("\n\n")
         body_html = "\n".join(f"<p>{para.replace(chr(10), '<br>')}</p>" for para in paragraphs)
@@ -236,7 +256,7 @@ def phase_merge() -> None:
             "lead_slug": lead["lead_slug"],
             "to_email": to_email,
             "to_name": f"{first} {last}".strip(),
-            "salutation": f"{title} {last}",
+            "salutation": salutation,
             "contact_first_name": first,
             "contact_last_name": last,
             "contact_title": title,

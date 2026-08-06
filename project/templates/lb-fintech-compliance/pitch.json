@@ -1,0 +1,14 @@
+{
+  "_comment": "Lebanon fintech/money-transfer/bank-compliance pitch. User's exact fixed copy, no signal variation. Salutation slot only change from the source text (Hi [Name], -> Hi {salutation},). No em-dashes. Renders through email_template.py at send.",
+  "country_names": {
+    "LB": "Lebanon"
+  },
+  "vertical_names": {
+    "fintech": "money transfer and fintech companies",
+    "bank": "banks"
+  },
+  "default_vertical": "fintech companies",
+  "subject_template": "A faster way through your AML alerts",
+  "body_template": "Hi {salutation},\n\nHope your week's going smoothly. I've been looking closely at how money transfer operations run in Lebanon, and I've noticed the same thing almost everywhere: the analysts who should be watching real risks spend their day closing alerts that turn out to be nothing, and re-checking ID documents that were photographed badly at the counter the first time. With the FATF grey list, that load is only going up.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG (https://osgdev.com). We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call so we can go through the details together? If a quick call is easier, my direct number is +961 76 412 978.\n\nBest regards,\nDavid Geha\nOSG\nhttps://osgdev.com\nInstagram: dave.automates",
+  "wa_body_template": "Hello {salutation},\n\nI've been looking at how money transfer operations run in Lebanon, and the same thing shows up everywhere: analysts spend their day closing alerts that turn out to be nothing and re-checking ID documents that were photographed badly the first time. With the FATF grey list, that load is only going up.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG. We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call to go through the details?\n\nDavid Geha, OSG\nhttps://osgdev.com\nInstagram: dave.automates"
+}

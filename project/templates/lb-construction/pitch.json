@@ -1,0 +1,13 @@
+{
+  "_comment": "Lebanon construction/engineering/design-consultancy pitch. User's exact fixed copy, no signal variation. Salutation slot is the only change from the source text. No em-dashes. Renders through email_template.py at send.",
+  "country_names": {
+    "LB": "Lebanon"
+  },
+  "vertical_names": {
+    "construction": "construction and engineering firms"
+  },
+  "default_vertical": "construction and engineering firms",
+  "subject_template": "Getting tenders out faster",
+  "body_template": "Hi {salutation},\n\nHope things are moving well on your end. Watching how firms are positioning for the reconstruction work, I've noticed the real race isn't on site, it's in the office: whoever reads the RFP, prices it with today's material costs and gets a clean, compliant file out first is the one who wins. Most teams still do all of that by hand, over weeks, while estimates go stale as prices shift.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG (https://osgdev.com). We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you have 20 minutes for a call to go through the details? If it's easier, you can call or WhatsApp me directly on +961 76 412 978.\n\nBest regards,\nDavid Geha\nOSG\nhttps://osgdev.com\nInstagram: dave.automates",
+  "wa_body_template": "Hello {salutation},\n\nWatching how firms are positioning for the reconstruction work, I've noticed the real race isn't on site, it's in the office: whoever prices the RFP with today's material costs and gets a clean, compliant file out first is the one who wins. Most teams still do that by hand, over weeks.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG. We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call to go through the details?\n\nDavid Geha, OSG\nhttps://osgdev.com\nInstagram: dave.automates"
+}

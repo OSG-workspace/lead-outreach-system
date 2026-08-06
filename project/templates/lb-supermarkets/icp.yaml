@@ -1,0 +1,23 @@
+icp_name: Lebanon Supermarkets & Food Retail
+description: >
+  Supermarket and food-retail chains in Lebanon where weekly ordering still
+  depends on branch-manager judgment rather than data. Google/Toters review
+  complaints about stock-outs, expired items, or register-price mismatches,
+  and frequent "today only" clearance posts, are the visible signs of reactive
+  ordering. Offer: OSG (David Geha) builds a custom AI system around that exact
+  gap. Fixed, user-approved copy (no signal variation); every send still
+  requires a real named decision-maker with a direct email.
+
+geography: LB
+country_filter: LB
+vertical: grocery
+
+target_person:
+  - Owner
+  - General Manager (family chains)
+  - Purchasing Director (bigger chains)
+  - Operations Director (bigger chains)
+
+draft_mode: template
+no_emdash: true
+keep_signature_link: true

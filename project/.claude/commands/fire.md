@@ -1,22 +1,23 @@
 ---
 name: fire
-description: Auto-pilot the lead-outreach pipeline. /fire <slug> dispatches one Haiku source-agent per query (max parallelism), then merges → fetches → extracts → drafts → sends via Brevo batch (+ optional WhatsApp) → persists. Halts on any fallback. No approval prompt. Default ICP is GCC consumer chains; per-run config can switch source-agent (e.g. source-agent-lb for Lebanon AI-receptionist) and enable WhatsApp.
+description: Auto-pilot the lead-outreach pipeline. /fire <slug> enumerates OSM/Places deterministically (no sourcing agents), then merges → fetches → extracts → enriches → drafts → sends via Brevo batch (+ optional WhatsApp) → persists. Halts on any fallback. No approval prompt. Per-run config selects the fixture, the channels and the draft mode.
 ---
 
 # /fire — Haiku-DDG parallel sourcing pipeline
 
 You are the orchestrator. The user typed `/fire <slug>` (or `/fire` to operate on the latest GCC run). Take the run from sourcing to sent **without stopping to ask, and without ever silently degrading**. They pre-authorized by invoking the command.
 
-This command runs the **Haiku-DDG path**: one `source-agent` Haiku sub-agent **per single query** (maximum parallelism). The Maps/`run_campaign.py` path is deprecated and must not be invoked from `/fire`.
+**Every run is independent of every previous run.** Prior runs of the same campaign — earlier today, completed, or still in progress — are never a reason to pause, inspect, or ask. A new fire runs in parallel in its own fresh folder; the ONLY cross-run state is the dedup ledgers (`sent-log.md`, sourced-log, `disqualified-log.txt`, `overpass-cities-fired.txt`), which mechanically guarantee no previously sourced, contacted or retired lead resurfaces and that each run enumerates its own fresh ground. Those ledgers are applied silently by the pipeline. They are NEVER a reason to warn the user, ask a question, or offer a choice. If a ledger leaves a run with nothing to search, that is a hard ABORT with a precise root cause, not a prompt.
+
+Sourcing is **deterministic enumeration** (`source_overpass.py` / `source_places.py`) — zero agents, zero tokens. The Maps/`run_campaign.py` path is deprecated and must not be invoked from `/fire`.
 
 ## File structure (must be in place before /fire runs)
 
 ```
-<home>/Desktop/lead-outreach-system/
+<home>/lead-outreach-system/
 ├── .claude/
 │   ├── settings.json                  # permissions: WebSearch, WebFetch, Bash, Write, etc.
 │   └── agents/
-│       └── source-agent.md            # the locked-tool sourcing sub-agent (WebSearch + Write only)
 └── project/
     ├── .claude/
     │   └── commands/fire.md           # THIS file
@@ -36,19 +37,22 @@ If any required file is missing → ABORT with the missing path. Do not improvis
 
 ## Critical rules
 
-- **Locked tools**: the `source-agent` Haiku sub-agent has only `WebSearch` + `Write` in its tools list. It physically cannot reach for Bash or run ddgs/crawl4ai. The orchestrator must NOT add tools to the sub-agent's prompt.
+- **Verify against the last run before asserting anything** (user directive 2026-07-31, see CLAUDE.md § VERIFY AGAINST THE LAST RUN). Any claim about how a stage behaves must come from a run folder, not from this file. Two traps that have already bitten: until the backlog was removed (2026-08-05) `qualified` included re-injected leads, so a run that sourced 5 candidates reported `qualified=179` — judge sourcing only by `candidates-all.txt`; and a clean `DONE` line can sit on top of a fully exhausted source and a 96%-dead enrichment fan-out.
+- **Names come from the email first, agents second** (user directive, re-affirmed 2026-07-31). Stage 5.5 prep runs `name_from_email.py` over each lead's own mailbox plus every person-format address harvested from its scraped pages. A lead whose decision-maker name is parsed from an address gets **no name-finder agent at all** — it is written to `derived-contacts.json` and faces every downstream gate identically. Only the remainder is dispatched. The parse is strict on purpose (known given name + role/brand/placeholder nets + page corroboration for single tokens): replayed against real crawls, a looser version produced `Services`, `Ihre`, `Brussels`, `Recrutement Cp` and `Grants Lb` as people. `DERIVE_NAMES_FROM_EMAIL=0` restores the old every-lead-gets-an-agent behaviour.
+- **Locked tools**: every sub-agent's tool list comes from its `tools:` frontmatter and is enforced by `--allowedTools`. The orchestrator must NOT add tools to a sub-agent's prompt.
 - **Kill on fallback** (memory: `kill-on-fallback`, `no-path-swap-on-fallback`): if any stage degrades, HALT with `ABORT: <stage> <root cause>`. Never silently switch paths.
 - **No approval prompts.** User pre-authorized at invocation time.
-- **One query per sub-agent.** Max parallelism. ~130 queries → ~130 parallel Haiku agents in one batch.
-- **One ICP per run.** Default is GCC consumer-chains via `source-agent`. Lebanon AI-receptionist uses `source-agent-lb` (set via `<run>/source_agent.txt`). Other ICPs must be added as a new source-agent variant before /fire can target them. Do NOT silently degrade or mix ICPs within one run.
+- **One ICP per run.** Each run's Stage-2 sourcing is declared in its `sourcing.json` (method `search` + an agent variant, or method `map` + an OSM selector). New ICPs are added as a new `templates/<base>/` fixture — never by mixing ICPs within one run, and never by silently degrading.
 - **Dispatch economics (why this command is safe on a Sonnet primary).** Sub-agents are Haiku and billed as Haiku; the orchestrator can run on any session model (Sonnet is fine). The ONE thing that makes the orchestrator expensive is dispatch mode. `run_in_background: true` wakes the primary loop and makes it re-read its full, growing context **once per sub-agent completion** — up to ~840 times per run across the two fan-outs (Step 3 + Step 6.5) — each re-read billed at the primary model's rate. That is what exhausted the plan usage limit on a Sonnet primary; a Haiku primary survived only because the identical re-reads were billed ~3× cheaper. **Always dispatch the fan-outs FOREGROUND, ≤50 Agent calls per assistant message.** Foreground calls in one message run concurrently and return together in ONE continuation, so the primary re-reads its context ~once per batch (~a dozen times per run) instead of ~840. Never set `run_in_background` on the Step 3 / Step 6.5 dispatches.
 
 ## Halt table
 
 | Stage | Halt condition |
 |---|---|
-| Pre-flight | `.claude/agents/source-agent.md` missing, `.claude/agents/name-finder.md` missing, `.claude/settings.json` missing WebSearch |
+| Pre-flight | `.claude/agents/name-finder.md` missing, `.claude/settings.json` missing WebSearch |
 | Sourcing | < 50 merged candidates after dedup |
+| Sourcing — **no fresh ground (exit 8, NOT a halt)** | a source whose ledgered ground is fully swept exits 8. Same for a `places` source with no `GOOGLE_PLACES_API_KEY` — an unconfigured source opened no ground, which is not a degraded campaign. This is an expected end state, not a fallback: other sources still run. The run's status line and final report carry `[no-fresh-ground: <vertical>]` so a run that sourced nothing new can never look like a run that sourced. |
+| Sourcing — **0 candidates** | HALTS the run at the Stage 3 / Stage 5 / Stage 5.3 zero-count gate, naming the supply fix (more `places.txt` rows, a wider selector, or a `places` source). The `qualified-pending` backlog that used to rescue this path was removed 2026-08-05: 92% of the leads it replayed (3,760/4,095) had a findable decision-maker but no publishable direct email, so every retry re-proved the same verdict at full agent cost. Those domains are now retired to `disqualified-log.txt` at Stage 5.5. |
 | HTML fetch | < 40% of candidates yielded ≥1 fetched page |
 | Extract | 0 leads in `leads-extracted.json` |
 | Qualify+cap (Stage 5.3) | 0 leads survive the qualify gate → `leads-qualified.json` empty (exit 7) |
@@ -65,15 +69,15 @@ If any required file is missing → ABORT with the missing path. Do not improvis
 
 ```bash
 # Settings must include WebSearch (sub-agents inherit this)
-grep -q '"WebSearch"' <home>/Desktop/lead-outreach-system/.claude/settings.json \
+grep -q '"WebSearch"' <home>/lead-outreach-system/.claude/settings.json \
     || { echo "ABORT: .claude/settings.json missing WebSearch in permissions.allow"; exit 1; }
 
 # name-finder is required for every run (Stage 5.5)
-[ -f <home>/Desktop/lead-outreach-system/.claude/agents/name-finder.md ] \
+[ -f <home>/lead-outreach-system/.claude/agents/name-finder.md ] \
     || { echo "ABORT: .claude/agents/name-finder.md missing (Stage 5.5 contact enrichment)"; exit 1; }
 ```
 
-### Step 1 — resolve run slug, pick source-agent
+### Step 1 — resolve run slug + sourcing contract
 
 ```bash
 SLUG="$1"
@@ -83,20 +87,14 @@ fi
 RUN="runs/$SLUG"
 
 [ -d "$RUN" ] || { echo "ABORT: $RUN does not exist."; exit 1; }
-[ -f "$RUN/icp.yaml" ] && [ -f "$RUN/queries.txt" ] \
-    || { echo "ABORT: $RUN missing icp.yaml or queries.txt."; exit 1; }
+[ -f "$RUN/icp.yaml" ] || { echo "ABORT: $RUN missing icp.yaml."; exit 1; }
 
-# Pick source-agent variant. Default = source-agent (GCC).
-SOURCE_AGENT="source-agent"
-if [ -f "$RUN/source_agent.txt" ]; then
-    SOURCE_AGENT=$(head -1 "$RUN/source_agent.txt" | tr -d ' \n')
-fi
-[ -f "<home>/Desktop/lead-outreach-system/.claude/agents/${SOURCE_AGENT}.md" ] \
-    || { echo "ABORT: source-agent definition missing: .claude/agents/${SOURCE_AGENT}.md"; exit 1; }
+# Sourcing is deterministic enumeration for every campaign; sourcing.json is
+# THE one contract (map selector/targets, or a `sources` ladder incl. places).
+[ -f "$RUN/sourcing.json" ] || { echo "ABORT: $RUN missing sourcing.json."; exit 1; }
 
 echo "Firing campaign: $RUN"
-echo "Source agent:    $SOURCE_AGENT"
-echo "Queries: $(wc -l < $RUN/queries.txt)"
+echo "Sourcing: $(cat "$RUN/sourcing.json")"
 ```
 
 ### Step 1.5 — path-aware pre-flight (FAIL FAST, before any agent is dispatched)
@@ -107,12 +105,10 @@ definition, and voice spec that path will touch. This turns a mid-run failure
 Run this verbatim:
 
 ```bash
-PROJ=<home>/Desktop/lead-outreach-system
+PROJ=<home>/lead-outreach-system
 ABORT(){ echo "ABORT (pre-flight): $1"; exit 1; }
 
 # --- resolve the path from the run's control files ---
-SOURCE_AGENT="source-agent"
-[ -f "$RUN/source_agent.txt" ] && SOURCE_AGENT=$(head -1 "$RUN/source_agent.txt" | tr -d ' \n')
 DRAFT_MODE="template"
 [ -f "$RUN/draft_mode.txt" ] && DRAFT_MODE=$(head -1 "$RUN/draft_mode.txt" | tr -d ' \n')
 EMAIL_ENABLED=1; WA_ENABLED=0
@@ -122,7 +118,7 @@ if [ -f "$RUN/channels.json" ]; then
 fi
 COMBINED_CUSTOM=0
 [ "$DRAFT_MODE" = "custom" ] && [ "$EMAIL_ENABLED" = "1" ] && [ "$WA_ENABLED" = "0" ] && COMBINED_CUSTOM=1
-echo "Pre-flight path: source=$SOURCE_AGENT draft=$DRAFT_MODE email=$EMAIL_ENABLED wa=$WA_ENABLED combined=$COMBINED_CUSTOM"
+echo "Pre-flight path: draft=$DRAFT_MODE email=$EMAIL_ENABLED wa=$WA_ENABLED combined=$COMBINED_CUSTOM"
 
 # --- core scripts every run needs (Stages 3-8) ---
 for s in merge_candidates.py fetch_html.sh extract_leads.py qualify_leads.py \
@@ -130,8 +126,8 @@ for s in merge_candidates.py fetch_html.sh extract_leads.py qualify_leads.py \
     [ -f "$PROJ/project/tools/scripts/$s" ] || ABORT "missing core script tools/scripts/$s"
 done
 
-# --- the resolved source-agent must exist ---
-[ -f "$PROJ/.claude/agents/${SOURCE_AGENT}.md" ] || ABORT "source-agent definition missing: .claude/agents/${SOURCE_AGENT}.md"
+# --- the deterministic enumerator must exist ---
+[ -f "$PROJ/project/tools/scripts/source_overpass.py" ] || ABORT "missing tools/scripts/source_overpass.py (map sourcing)"
 
 # --- path-specific agents + scripts + voice specs ---
 if [ "$COMBINED_CUSTOM" = "1" ]; then
@@ -176,66 +172,34 @@ python3 tools/scripts/gen_run_readme.py --run-dir "$RUN"
 If anything is missing, the run stops here with the exact path, before a single
 Haiku agent is dispatched. Only continue past this point on `Pre-flight OK`.
 
-### Step 2 — split queries 1-per-batch (maximum sub-agents)
+### Step 2 — source (deterministic enumeration, NO agents)
+
+Sourcing dispatches nothing. `run_fire.py` reads `sourcing.json` and runs the
+enumerator directly — `source_overpass.py` for a `map` source, `source_places.py`
+for a `places` source — each emitting `candidates-batch-*.txt` in the same
+pipe-delimited format every later stage already reads. Zero LLM tokens.
 
 ```bash
 # Clean prior artifacts so /fire starts fresh
-rm -f "$RUN"/queries-batch-* "$RUN"/candidates-batch-* "$RUN"/candidates-all.txt
+rm -f "$RUN"/candidates-batch-* "$RUN"/candidates-all.txt
 rm -rf "$RUN"/raw_html
 rm -f "$RUN"/leads-extracted.json "$RUN"/leads-with-contact.json
 rm -f "$RUN"/enrich-batch-* "$RUN"/enrich-out-*
 rm -f "$RUN"/emails-drafted.json "$RUN"/emails-sent.jsonl "$RUN"/send-log.txt
 
-# 1 query per batch → 1 sub-agent per query → max parallel Haiku agents
-split -l 1 "$RUN/queries.txt" "$RUN/queries-batch-"
-BATCHES=$(ls "$RUN"/queries-batch-* | wc -l | tr -d ' ')
-echo "Will dispatch $BATCHES parallel source-agent sub-agents (1 query each)."
-```
+python3 tools/scripts/source_overpass.py --run-dir "$RUN" \
+    --source "$(cat "$RUN/sourcing.json")" --batch-prefix 01-main
 
-### Step 3 — dispatch ALL sub-agents in parallel (FOREGROUND, batched assistant messages)
-
-Issue the `Agent` tool calls **foreground** — do NOT set `run_in_background`. Foreground calls in one assistant message run concurrently and their results return together in a **single** continuation turn, so the primary context is re-read ~once per batch instead of once per agent (see "Dispatch economics" above — this is what keeps a Sonnet orchestrator under the usage limit). Concurrent dispatch is also what makes it fast — sequential defeats the purpose.
-
-**Batch size:** put up to **50** Agent calls in one assistant message. If there are more than 50 `queries-batch-*` files, send several sequential messages of ≤50 calls each. The harness concurrency-caps parallel sub-agents regardless, so 50/message yields the same true parallelism as 600/message while keeping each message — and each primary context re-read — bounded.
-
-**Pick which source-agent variant to use** based on the run folder:
-
-```bash
-SOURCE_AGENT="source-agent"  # default = GCC consumer-chains
-if [ -f "$RUN/source_agent.txt" ]; then
-    SOURCE_AGENT=$(head -1 "$RUN/source_agent.txt" | tr -d ' \n')
-fi
-echo "Using sub-agent: $SOURCE_AGENT"
-```
-
-Currently shipped variants:
-- `source-agent` — GCC multi-location consumer chains (default)
-- `source-agent-lb` — Lebanon AI-receptionist ICP (phone-heavy single- and multi-location businesses)
-- `source-agent-worldwide` — worldwide receptionist ICP (any country; used by the EU-hotels run)
-- `source-agent-us` — small US service businesses (law firms, staffing, med spas/dental/clinics, property mgmt) for the US inbox/scheduling gap-based campaign
-- `source-agent-lb-enterprise` — biggest Lebanese companies/brands for the WhatsApp custom-consultant pitch
-
-If `$RUN/source_agent.txt` doesn't exist, the default `source-agent` is used.
-
-For each `queries-batch-XX` file, dispatch ONE Agent call with this exact shape:
-
-- **subagent_type**: `$SOURCE_AGENT`  ← whichever variant was resolved above
-- **model**: `haiku`  ← sub-agents stay Haiku regardless of the session/orchestrator model
-- **run_in_background**: **omit it** — dispatch foreground. Do NOT set `run_in_background: true`; that re-invokes the primary loop once per completion and is what blew the Sonnet usage limit.
-- **prompt** (minimal — the agent definition has the full role baked in):
-  ```
-  Query: <the one query in this batch>
-  OutputFile: /absolute/path/to/runs/<slug>/candidates-batch-XX.txt
-  ```
-
-That's it. Do NOT inline the source-agent instructions into the prompt — they live in `.claude/agents/<source-agent>.md` and are loaded automatically when the matching `subagent_type` is used.
-
-After all agents complete, count outputs:
-
-```bash
 TOTAL_RAW=$(cat "$RUN"/candidates-batch-*.txt 2>/dev/null | grep -c '^[a-z0-9]')
 echo "Raw candidates: $TOTAL_RAW (pre-dedup)"
 ```
+
+Exit 8 = this source has no fresh ground left (its cities are all in
+`vault/lead-outreach/overpass-cities-fired.txt`). That is an expected end state,
+not a fallback: any other declared source still runs. If EVERY source is dry the
+run halts at the Step 4 zero-candidate gate — see the halt table. There is no
+backlog to fall back on; add `places.txt` rows, widen the selector, or declare a
+`places` source.
 
 ### Step 4 — merge + dedup
 
@@ -353,7 +317,7 @@ and 7 are already done by this one fan-out.
 
 ### Step 6.5 — contact-person enrichment (Stage 5.5)
 
-Resolves a real Mr./Mrs. + Surname per lead so the salutation contract in CLAUDE.md is honored. Mirrors the source-agent fan-out from Step 3: one Haiku `name-finder` sub-agent **per lead**, dispatched **foreground** in batched assistant messages (≤50 calls each). This phase is the bigger fan-out — it can reach 600+ leads — so it is exactly where `run_in_background` previously exhausted the Sonnet usage limit. Never use `run_in_background` here (see "Dispatch economics" and Step 3).
+Resolves a real Mr./Mrs. + Surname per lead so the salutation contract in CLAUDE.md is honored. One Haiku `name-finder` sub-agent **per lead**, dispatched **foreground** in batched assistant messages (≤50 calls each). This phase is the bigger fan-out — it can reach 600+ leads — so it is exactly where `run_in_background` previously exhausted the Sonnet usage limit. Never use `run_in_background` here (see "Dispatch economics" and Step 3).
 
 **Phone enrichment is OPT-IN.** The name-finder mobile/WhatsApp ladder is the
 single biggest source of wasted searches, and an email-only run never uses a
@@ -492,8 +456,9 @@ DRAFTED=$(wc -l < "$RUN/emails-drafted.json")
 ```
 
 The merge step drops any draft that breaks the contract (missing
-`Hello Mr./Mrs. <Surname>,`, any money word, missing `automatelb.com` link,
-generic mailbox, em/en dash) — kill-on-fallback, never patched to ship volume.
+`Hello Mr./Mrs. <Surname>,`, any money word, missing `osgdev.com` link,
+generic mailbox, em/en dash). The `Instagram: dave.automates` signature line is
+appended by the drafter if the writer left it out, so it is never a drop reason — kill-on-fallback, never patched to ship volume.
 
 Both modes produce `emails-drafted.json` with the same schema, so Step 8 (send)
 is identical regardless of draft mode.
@@ -557,8 +522,8 @@ WA_DRAFTED=$(wc -l < "$RUN/whatsapp-drafted.json" 2>/dev/null | tr -d ' ')
 ```
 
 The merge step drops any draft that breaks the contract (missing `Hello Mr./Mrs.
-<Surname>,`, any money word, em/en dash, any `automatelb.com` or "Automate" mention,
-unparseable mobile) — kill-on-fallback, never patched to ship volume.
+<Surname>,`, any money word, em/en dash, any `osgdev.com`/`automatelb.com` or "OSG"/"Automate"
+mention outside the `dave.automates` handle, unparseable mobile) — kill-on-fallback, never patched to ship volume.
 
 **Otherwise (template mode)** — GCC / LB receptionist / worldwide — keep the existing
 template drafter:
@@ -606,7 +571,7 @@ dead. Delete them now — keep the merged/final artifacts (`candidates-all.txt`,
 
 ```bash
 rm -rf "$RUN/raw_html"
-rm -f "$RUN"/candidates-batch-* "$RUN"/queries-batch-* \
+rm -f "$RUN"/candidates-batch-* \
       "$RUN"/enrich-batch-* "$RUN"/enrich-out-* \
       "$RUN"/lead-batch-* "$RUN"/lead-out-* \
       "$RUN"/gap-batch-* "$RUN"/gap-out-* \
@@ -620,7 +585,7 @@ Skip ONLY if the user explicitly asked to keep artifacts for debugging
 ### Step 10 — final report
 
 ```
-Campaign $SLUG fired (Haiku-DDG path, source-agent + name-finder dispatch).
+Campaign $SLUG fired (deterministic sourcing + name-finder dispatch).
   source sub-agents dispatched : $BATCHES
   raw candidates               : $TOTAL_RAW
   merged + deduped             : $MERGED
@@ -640,12 +605,11 @@ Sent-log updated. Done.
 
 - **Never** invoke `run_campaign.py` — deprecated Maps path.
 - **Never** prompt the user for approval. Auto-fire is pre-authorized.
-- **Never** batch queries together. One query per agent.
 - **Never** silently switch paths on failure. HALT, report root cause, exit non-zero.
-- **Never** inline source-agent, name-finder, or gap-writer instructions into the dispatch prompt — they live in `.claude/agents/source-agent.md`, `.claude/agents/name-finder.md`, and `.claude/agents/gap-writer.md`.
+- **Never** inline name-finder or gap-writer instructions into the dispatch prompt — they live in `.claude/agents/name-finder.md` and `.claude/agents/gap-writer.md`.
 - **Custom draft runs** (`draft_mode.txt` = `custom`): use Step 7b (gap-writer fan-out), never the template `draft_emails.py`. Require `vertical.txt`; if it is blank, ABORT and have the user specify the vertical (never default it silently).
 - **Never** skip Stage 5.5 (contact-person enrichment). Every send must open with `Hello Mr./Mrs. <Surname>,` per the salutation contract in `project/CLAUDE.md`. Leads without a resolved Mr./Mrs.+Surname are dropped.
-- **Never** auto-generate `icp.yaml` or `queries.txt`. If missing, abort and ask user.
+- **Never** auto-generate `icp.yaml` or `sourcing.json`. If missing, abort and ask user.
 - Dedup against `vault/lead-outreach/sent-log.md` is enforced for EMAIL inside merge_candidates.py + extract_leads.py, and for WhatsApp inside draft_whatsapp.py (pre-draft) + send_campaign.js (send-time net). Both channels persist via persist_sent_log.py. A lead contacted on either channel is never re-contacted on either.
 - Honor `MAX_EMAILS_PER_RUN` env var as send cap (default 1000).
 - **WhatsApp-only runs** (`channels.json` has `"whatsapp"` and not `"email"`): skip

@@ -5,6 +5,18 @@
 **/.wwebjs_cache/
 **/.wwebjs_auth/
 
+# ===== The Obsidian vault: memory stays LOCAL =====
+# The vault is this system's long-term memory — sent history, per-lead records,
+# dedup ledgers, the live ICP/voice specs. None of it belongs in a public repo:
+# it is contact PII plus high-churn machine state that would conflict on every
+# pull. The STRUCTURE is documented instead, so the design is still legible:
+# see project/vault/README.md (tracked) for what each file is and how to
+# bootstrap an empty vault.
+# (exclude the CONTENTS, not the directory itself — git cannot re-include a file
+#  inside an excluded directory, so `project/vault/` would also hide the README)
+project/vault/*
+!project/vault/README.md
+
 # ===== Contact PII — excluded by request (sent history, bounces, lead records) =====
 **/sent-log.md
 **/bounce-list.md
@@ -17,8 +29,13 @@ runs/
 # ===== Retired/quarantined data (old vault copies containing PII) =====
 **/.archive/
 
+# ===== Unrelated sibling project (standalone Vapi voice agent, own deploy) =====
+vapi/
+
 # ===== Python / Node / build caches =====
 venv/
+.venv/
+**/.venv/
 **/__pycache__/
 *.pyc
 **/.pytest_cache/

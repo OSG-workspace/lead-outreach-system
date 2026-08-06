@@ -1,0 +1,22 @@
+icp_name: Lebanon Restaurants, Hotels & Beach Clubs
+description: >
+  Restaurant/F&B groups, hotels, and beach clubs whose Instagram/WhatsApp
+  inbox fills up with the same menu/hours/booking questions and goes
+  unanswered during service. Unanswered public comments and "DM to reserve"
+  booking flows are the visible signs of a fully manual inbox. Offer: OSG
+  (David Geha) builds a custom AI system around that exact gap. Fixed,
+  user-approved copy (no signal variation); every send still requires a real
+  named decision-maker with a direct email.
+
+geography: LB
+country_filter: LB
+vertical: hospitality
+
+target_person:
+  - Owner
+  - Operations Manager
+  - Brand Manager
+
+draft_mode: template
+no_emdash: true
+keep_signature_link: true

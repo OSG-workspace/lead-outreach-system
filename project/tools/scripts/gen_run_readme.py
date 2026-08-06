@@ -30,7 +30,27 @@ def head1(p: Path) -> str:
 
 
 def detect(run: Path) -> dict:
-    source_agent = head1(run / "source_agent.txt") or "source-agent"
+    # Sourcing comes from the fixture's single sourcing.json contract. Since
+    # 2026-08-05 the only method is deterministic map/places enumeration; the
+    # agent-per-query "search" method and its source-agent definitions are gone.
+    # Legacy run folders fall back to source_agent.txt ("overpass" == map).
+    source_desc = "map enumeration (source_overpass.py)"
+    sj = run / "sourcing.json"
+    if sj.exists():
+        try:
+            cfg = json.loads(sj.read_text())
+            if cfg.get("method") == "map":
+                source_desc = f"map enumeration ({cfg.get('vertical', 'hotel')}, source_overpass.py)"
+            else:
+                source_desc = cfg.get("agent", "map enumeration")
+        except Exception:
+            pass
+    else:
+        legacy = head1(run / "source_agent.txt")
+        if legacy == "overpass":
+            source_desc = "map enumeration (source_overpass.py)"
+        elif legacy:
+            source_desc = legacy
     draft_mode = head1(run / "draft_mode.txt") or "template"
     vertical = head1(run / "vertical.txt")
     email, wa = True, False
@@ -54,7 +74,7 @@ def detect(run: Path) -> dict:
         except Exception:
             pass
     combined_custom = (draft_mode == "custom" and email and not wa)
-    return dict(source_agent=source_agent, draft_mode=draft_mode, vertical=vertical,
+    return dict(source_agent=source_desc, draft_mode=draft_mode, vertical=vertical,
                 email=email, wa=wa, countries=countries, hotel_gate=hotel_gate,
                 combined_custom=combined_custom)
 
@@ -64,8 +84,7 @@ def control_rows(run: Path, d: dict) -> str:
     rows = [
         ("README.md", "this manifest (generated)", "—"),
         ("icp.yaml", "ICP intent + qualification doc", has("icp.yaml")),
-        ("queries.txt", "one query per line → one source-agent each", has("queries.txt")),
-        ("source_agent.txt", "which sourcing sub-agent", d["source_agent"]),
+        ("sourcing.json", "Stage-2 sourcing contract (method + params)", d["source_agent"]),
         ("countries.txt", "ISO-2 country filter (absent → GCC default)", d["countries"] or "—"),
         ("draft_mode.txt", "template | custom", d["draft_mode"]),
         ("channels.json", "channels that send", ("email " if d["email"] else "") + ("whatsapp" if d["wa"] else "") or "email (default)"),
@@ -81,7 +100,7 @@ def control_rows(run: Path, d: dict) -> str:
 def pipeline_rows(d: dict) -> str:
     R = [("| Stage | Runs | Reads | Writes | Scores / gates on |"),
          ("|---|---|---|---|---|")]
-    R.append(f"| 2. Source | `{d['source_agent']}` (1 per query) | query line | `candidates-batch-*.txt` | agent fit judgement |")
+    R.append(f"| 2. Source | `{d['source_agent']}` | sourcing.json contract | `candidates-batch-*.txt` | exhaustive enumeration |")
     cf = d["countries"] or "GCC default"
     R.append(f"| 3. Merge+dedup | `merge_candidates.py` | candidate `ISO2`; `countries.txt`; sent-log | `candidates-all.txt` | keep if country ∈ {{{cf}}} AND not already contacted |")
     R.append("| 4. Fetch | `fetch_html.sh` (6 pages) | candidate domains | `raw_html/` | — |")
@@ -92,7 +111,7 @@ def pipeline_rows(d: dict) -> str:
     R.append(f"| 5.3 Qualify+cap | `qualify_leads.py` | `email_class`,`signal`,`score`,`vertical`{hv} | `leads-qualified.json` | DROP `personal`/`score<82`/`modern_booking`;{hgate} RANK {hrank}`score` ↓, person>role; CAP top-80 |")
 
     if d["combined_custom"]:
-        R.append("| 5.5+6 Find+Write | `lead-writer` (1 per qualified lead) + `draft_lead_custom.py` | scraped pages, harvested emails | `emails-drafted.json` | KEEP only if real Mr./Mrs.+surname AND **non-generic direct email** AND a concrete per-business gap; salutation/no-money/link/no-dash contract |")
+        R.append("| 5.5+6 Find+Write | `lead-writer` (1 per qualified lead) + `draft_lead_custom.py` | scraped pages, harvested emails | `emails-drafted.json` | KEEP only if at least one confirmed name component (Mr./Mrs.+surname, or first name alone) AND **non-generic direct email** AND a concrete per-business gap; salutation/no-money/link/no-dash contract |")
     else:
         R.append("| 5.5 Enrich | `enrich_contact_person.py` + `name-finder` (1 per qualified lead) | business, country, site emails/pages | `leads-with-contact.json` | KEEP only if real Mr./Mrs.+surname AND **non-generic direct email** |")
         if d["email"] and d["draft_mode"] == "custom":
@@ -163,7 +182,8 @@ Fire with: `/fire {run.name}`
 
 
 def is_run(run: Path) -> bool:
-    return run.is_dir() and ((run / "icp.yaml").exists() or (run / "queries.txt").exists()
+    return run.is_dir() and ((run / "icp.yaml").exists()
+                             or (run / "sourcing.json").exists()
                              or (run / "source_agent.txt").exists())
 
 

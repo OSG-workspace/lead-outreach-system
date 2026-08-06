@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Repo root: `<home>/Desktop/lead-outreach-system`. Scripts run from `project/` cwd; `python3 tools/scripts/...`.
+- Repo root: `<home>/lead-outreach-system`. Scripts run from `project/` cwd; `python3 tools/scripts/...`.
 - New sourcing agent country tag is always `LB`.
 - Message identity: `David Geha, a third-year engineering student at AUB`. NOT "from Automate".
 - Social proof line: `I work with a team building custom AI systems for clients across Lebanon, the GCC, and India.` Never "small team".
@@ -30,7 +30,7 @@
 - Create: `project/vault/lead-outreach/voice-lb-wa.md`
 
 **Interfaces:**
-- Produces: the canonical voice spec the `wa-writer` agent reads first (Task 3 consumes it by absolute path `<home>/Desktop/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`).
+- Produces: the canonical voice spec the `wa-writer` agent reads first (Task 3 consumes it by absolute path `<home>/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`).
 
 - [ ] **Step 1: Write the voice spec file**
 
@@ -265,7 +265,7 @@ does by hand.
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/Desktop/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`
+`<home>/lead-outreach-system/project/vault/lead-outreach/voice-lb-wa.md`
 If it is missing, abort and report. Do not improvise voice.
 
 ## Input (from orchestrator)
@@ -365,7 +365,7 @@ def _lead(**over):
         "lead_id": "web-aishti-com", "lead_slug": "aishti-com", "name": "Aishti",
         "website": "examplebrand.com", "vertical": "retail", "country_code": "LB",
         "score": 90, "contact_first_name": "Tony", "contact_last_name": "Salame",
-        "contact_title": "Mr.", "contact_phone": "+96170123456",
+        "contact_title": "Mr.", "contact_phone": "+96170000000",
         "contact_email": "founder@examplebrand.com",
     }
     base.update(over)
@@ -406,7 +406,7 @@ def test_merge_keeps_valid_draft(tmp_path):
     rows = [json.loads(x) for x in (run / "whatsapp-drafted.json").read_text().splitlines() if x.strip()]
     assert len(rows) == 1
     d = rows[0]
-    assert d["to_jid"] == "96170123456@c.us"
+    assert d["to_jid"] == "96170000000@c.us"
     assert d["salutation"] == "Mr. Salame"
     assert "automatelb" not in d["body_text"].lower()
 
@@ -985,7 +985,7 @@ Expected: lists all 8 files and prints `READY`.
 - [ ] **Step 6: Force-add the template (runs/ is gitignored) and commit**
 
 ```bash
-cd <home>/Desktop/lead-outreach-system
+cd <home>/lead-outreach-system
 git add -f project/runs/2026-06-22-lb-enterprise/icp.yaml \
             project/runs/2026-06-22-lb-enterprise/queries.txt \
             project/runs/2026-06-22-lb-enterprise/countries.txt \
@@ -1062,7 +1062,7 @@ Run:
 cd project
 TMP="runs/_smoke-lb-enterprise"
 mkdir -p "$TMP/raw_html"
-printf '{"lead_id":"web-aishti-com","lead_slug":"aishti-com","name":"Aishti","website":"examplebrand.com","vertical":"retail","country_code":"LB","score":90,"contact_first_name":"Tony","contact_last_name":"Salame","contact_title":"Mr.","contact_phone":"+96170123456","contact_email":"founder@examplebrand.com"}\n' > "$TMP/leads-with-contact.json"
+printf '{"lead_id":"web-aishti-com","lead_slug":"aishti-com","name":"Aishti","website":"examplebrand.com","vertical":"retail","country_code":"LB","score":90,"contact_first_name":"Firstname","contact_last_name":"Lastname","contact_title":"Mr.","contact_phone":"+96170000000","contact_email":"founder@examplebrand.com"}\n' > "$TMP/leads-with-contact.json"
 python3 tools/scripts/draft_whatsapp_custom.py --phase prep --run-dir "$TMP"
 printf '{"lead_id":"web-aishti-com","lead_slug":"aishti-com","workflow_gaps":"g","how_we_help":"h","body_text":"Hello Mr. Salame,\\n\\nAishti handles stock and order questions by hand.\\n\\nI'"'"'m David Geha, a third-year engineering student at AUB. I work with a team building custom AI systems for clients across Lebanon, the GCC, and India, and we'"'"'d take that repetitive work off your team. You own the system, no platform lock-in.\\n\\nWorth a short call this week?\\n\\nDavid Geha"}\n' > "$TMP/wa-out-001.json"
 python3 tools/scripts/draft_whatsapp_custom.py --phase merge --run-dir "$TMP"

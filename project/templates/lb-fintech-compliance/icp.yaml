@@ -1,0 +1,23 @@
+icp_name: Lebanon Money Transfer, Fintech & Bank Compliance Departments
+description: >
+  Money-transfer operators, e-payment/fintech companies, and the compliance
+  departments of major Lebanese banks. These teams process AML/KYC checks,
+  transaction monitoring, and ID verification largely by hand; open compliance
+  headcount and app-store complaints about verification delays are the visible
+  signs of that manual load. Offer: OSG (David Geha) builds a custom AI system
+  around that exact workflow. Fixed, user-approved copy (no signal variation);
+  every send still requires a real named decision-maker with a direct email.
+
+geography: LB
+country_filter: LB
+vertical: fintech
+
+target_person:
+  - Head of Compliance
+  - MLRO (Money Laundering Reporting Officer)
+  - COO
+  - Head of Operations
+
+draft_mode: template   # fixed, user-approved pitch.json; no freeform per-lead writing
+no_emdash: true
+keep_signature_link: true   # David Geha / OSG, osgdev.com in every email

@@ -1,0 +1,23 @@
+icp_name: Lebanon Construction, Engineering & Design Consultancies
+description: >
+  Contractors and engineering/design consultancies competing for reconstruction
+  work, where whoever prices the RFP and gets a clean, compliant bid file out
+  first wins, but most teams still do that by hand over weeks. Open "tender
+  engineer"/"proposal engineer"/"document controller" roles and CDR
+  awarded-contract data are the visible signs of a manual bid office. Offer:
+  OSG (David Geha) builds a custom AI system around that exact gap. Fixed,
+  user-approved copy (no signal variation); every send still requires a real
+  named decision-maker with a direct email.
+
+geography: LB
+country_filter: LB
+vertical: construction
+
+target_person:
+  - Business Development Director
+  - Tendering Manager
+  - Technical Office Manager
+
+draft_mode: template
+no_emdash: true
+keep_signature_link: true

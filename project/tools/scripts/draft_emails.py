@@ -12,10 +12,12 @@ careers@, etc.) are kill-on-fallback — the lead is dropped rather than sent
 to a shared inbox where the salutation `Hello Mr. <Surname>,` would be wasted.
 
 Salutation contract (per CLAUDE.md): every draft opens with
-`Hello Mr. <Surname>,` or `Hello Mrs. <Surname>,`. Never bare "Hello,"
-and never "<Business> team,". Leads that lack the enriched contact fields
-or a direct email (can only happen if this script is run against a stale
-leads-extracted.json that skipped Stage 5.5) are dropped.
+`Hello Mr./Mrs. <Surname>,` when a surname + gender exist, else
+`Hello <First>,` (one confirmed name component is enough; the verified
+direct email is the real bar). Never bare "Hello," and never
+"<Business> team,". Leads that lack every name component or a direct email
+(can only happen if this script is run against a stale leads-extracted.json
+that skipped Stage 5.5) are dropped.
 
 Falls back to reading leads-extracted.json only when leads-with-contact.json
 is absent, in which case it drops every lead lacking enriched fields.
@@ -23,7 +25,11 @@ is absent, in which case it drops every lead lacking enriched fields.
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from email_utils import COUNTRY_NAMES_ISO
 
 p = argparse.ArgumentParser()
 p.add_argument("--run-dir", required=True)
@@ -44,7 +50,9 @@ RUN_SLUG = ROOT.name
 # {vertical}, {salutation}, {opener}.
 # --------------------------------------------------------------------------
 
-DEFAULT_COUNTRY_NAMES = {"AE": "the UAE", "SA": "Saudi Arabia", "QA": "Qatar", "BH": "Bahrain", "KW": "Kuwait"}
+# Broad ISO map from email_utils so {country} renders correctly for ANY
+# campaign geography; pitch.json `country_names` still overrides per-fixture.
+DEFAULT_COUNTRY_NAMES = dict(COUNTRY_NAMES_ISO)
 DEFAULT_VERTICAL_NAMES = {
     "clinic": "clinic groups", "vet": "veterinary clinics",
     "optical": "optical chains", "fitness": "fitness brands",
@@ -68,7 +76,7 @@ DEFAULT_BODY_TEMPLATE = """Hello {salutation},
 
 {opener}
 
-Automate is an AI consulting firm that designs custom AI systems for mid-market companies in the GCC. For {vertical}, we build the intake, reporting, and handoff workflows around the tools already in place. You own the system, with no monthly platform lock-in. Not a chatbot, but a custom AI tool that quietly takes work off your team.
+OSG is an AI consulting firm that designs custom AI systems for mid-market companies in the GCC. For {vertical}, we build the intake, reporting, and handoff workflows around the tools already in place. You own the system, with no monthly platform lock-in. Not a chatbot, but a custom AI tool that quietly takes work off your team.
 
 A fraction of what global consulting firms charge, and we walk if there is no clear ROI in the first 20 minutes.
 
@@ -76,7 +84,8 @@ Worth a brief call this week?
 
 Regards,
 David Geha
-Automate, automatelb.com"""
+OSG, osgdev.com
+Instagram: dave.automates"""
 
 PITCH_FILE = ROOT / "pitch.json"
 _pitch = {}
@@ -86,6 +95,12 @@ if PITCH_FILE.exists():
 COUNTRY_NAMES = {**DEFAULT_COUNTRY_NAMES, **(_pitch.get("country_names") or {})}
 VERTICAL_NAMES = {**DEFAULT_VERTICAL_NAMES, **(_pitch.get("vertical_names") or {})}
 SIGNAL_OPENERS = {**DEFAULT_SIGNAL_OPENERS, **(_pitch.get("signal_openers") or {})}
+# Optional per-country phrase for the local language/dialect the agent speaks,
+# keyed by ISO2 (e.g. {"SA": "Saudi Najdi and Hejazi Arabic"}). Exposed to the
+# templates as the {dialect} slot. Absent from most fixtures; a campaign that
+# never uses {dialect} is unaffected.
+DIALECT_NAMES = _pitch.get("dialect_names") or {}
+DEFAULT_DIALECT = _pitch.get("default_dialect", "the local language")
 SUBJECT_TEMPLATE = _pitch.get("subject_template", DEFAULT_SUBJECT_TEMPLATE)
 BODY_TEMPLATE = _pitch.get("body_template", DEFAULT_BODY_TEMPLATE)
 DEFAULT_VERTICAL = _pitch.get("default_vertical", "chains")
@@ -113,10 +128,15 @@ def draft(lead: dict) -> dict:
     vertical = VERTICAL_NAMES.get(lead["vertical"], DEFAULT_VERTICAL)
     signal = lead.get("signal", "phone_led")
     opener_tpl = SIGNAL_OPENERS.get(signal, SIGNAL_OPENERS["phone_led"])
-    opener = opener_tpl.format(name=name, country=country, vertical=vertical)
+    dialect = DIALECT_NAMES.get(lead["country_code"], DEFAULT_DIALECT)
+    opener = opener_tpl.format(name=name, country=country, vertical=vertical,
+                               dialect=dialect)
 
-    salutation = f"{lead['contact_title']} {lead['contact_last_name']}"
-    fmt = dict(name=name, country=country, vertical=vertical, salutation=salutation, opener=opener)
+    last = lead["contact_last_name"]
+    title = lead["contact_title"]
+    salutation = f"{title} {last}" if (last and title) else lead["contact_first_name"]
+    fmt = dict(name=name, country=country, vertical=vertical, salutation=salutation,
+               opener=opener, dialect=dialect)
     subject = _strip_dashes(SUBJECT_TEMPLATE.format_map(fmt))
     body_text = _strip_dashes(BODY_TEMPLATE.format_map(fmt))
 
@@ -127,7 +147,7 @@ def draft(lead: dict) -> dict:
         "lead_id": lead["lead_id"],
         "lead_slug": lead["lead_slug"],
         "to_email": lead["contact_email"],
-        "to_name": f"{lead['contact_first_name']} {lead['contact_last_name']}",
+        "to_name": f"{lead['contact_first_name']} {lead['contact_last_name']}".strip(),
         "salutation": salutation,
         "contact_first_name": lead["contact_first_name"],
         "contact_last_name": lead["contact_last_name"],
@@ -198,7 +218,9 @@ for l in leads:
     first = l.get("contact_first_name", "").strip()
     last = l.get("contact_last_name", "").strip()
     title = l.get("contact_title", "").strip()
-    if not first or not last or title not in {"Mr.", "Mrs."}:
+    # One name component is enough (per CLAUDE.md salutation contract):
+    # surname + Mr./Mrs., or a bare first name.
+    if not ((last and title in {"Mr.", "Mrs."}) or first):
         dropped_no_contact += 1
         continue
     if not is_direct_email(l.get("contact_email", "")):

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.osg.linkedin-daily</string>
+
+    <!-- launchd, NOT cron. Three reasons that matter here:
+         * cron on macOS runs outside the GUI session, so it cannot open the
+           Chrome window the senders attach to;
+         * cron needs Full Disk Access to read anything under ~/Desktop, which
+           this project lives in — it fails silently without it;
+         * cron.txt in this folder was never installed anyway, and its sender
+           lines called flock(1), which macOS does not ship. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string><home>/lead-outreach-system/project/linkedin/scripts/autopilot.sh</string>
+        <string>--live</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string><home>/lead-outreach-system/project/linkedin</string>
+
+    <!-- 09:10, Monday to Friday. The senders pace themselves across the
+         09:15-17:30 window and re-derive the ramp themselves, so starting the
+         process a few minutes early costs nothing and spends nothing. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string><home>/lead-outreach-system/project/linkedin/state/daily.log</string>
+    <key>StandardErrorPath</key>
+    <string><home>/lead-outreach-system/project/linkedin/state/daily.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- The sender deliberately sleeps between actions across the whole send
+         window; launchd must not treat that as a hung job and kill it. -->
+    <key>ExitTimeOut</key>
+    <integer>0</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

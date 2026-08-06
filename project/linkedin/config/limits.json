@@ -1,0 +1,36 @@
+{
+  "_comment": "Every number here is enforced in code, never in a prompt. sender.js and messenger.js re-derive all of it themselves, so a bad queue can only be truncated, never obeyed. t18-limits-sanity.test.js pins the ceilings against LinkedIn's real free-account limits.",
+
+  "timezone": "Europe/Paris",
+
+  "_invites_comment": "LinkedIn enforces roughly 100 connection invitations per WEEK on a free account, and the weekly ceiling is the one that actually gets people restricted. 90 leaves headroom under it. The ramp exists because a brand-new automated sender jumping straight to its cap is the single loudest signal there is.",
+  "ramp": [
+    { "throughDay": 5,    "invitesPerDay": 8  },
+    { "throughDay": 10,   "invitesPerDay": 12 },
+    { "throughDay": 15,   "invitesPerDay": 15 },
+    { "throughDay": null, "invitesPerDay": 18 }
+  ],
+  "absoluteDailyMax": 20,
+  "weeklyMax": 90,
+
+  "_dms_comment": "DMs go only to people who already accepted, so they are far safer than invites — but they were previously flat 25/day from day one with NO ramp and NO weekly ceiling, i.e. up to 125/week from a cold account. Now ramped and capped like invites.",
+  "dmRamp": [
+    { "throughDay": 5,   "dmsPerDay": 8  },
+    { "throughDay": 10,  "dmsPerDay": 12 },
+    { "throughDay": null, "dmsPerDay": 20 }
+  ],
+  "followUpDmsPerDay": 20,
+  "dmWeeklyMax": 100,
+
+  "_pending_comment": "A pile of unanswered invites is a top restriction signal, AND it drags trailingAcceptance down until the 25% floor breaker halts sending for a bookkeeping reason rather than a real one. withdraw_pending.js retires them; maxOutstandingInvites stops queueing new ones while the pile is too big.",
+  "withdrawPendingAfterDays": 21,
+  "maxOutstandingInvites": 120,
+
+  "sendWindow": { "start": "09:15", "end": "17:30" },
+  "sendDays": ["mon","tue","wed","thu","fri"],
+  "gapMinutes": { "min": 6, "max": 25 },
+  "burstPause": { "afterActions": 3, "pauseMinutes": { "min": 20, "max": 45 } },
+  "profileDwellSeconds": { "min": 4, "max": 12 },
+  "acceptanceFloorPct": 25,
+  "acceptanceFloorSampleSize": 100
+}

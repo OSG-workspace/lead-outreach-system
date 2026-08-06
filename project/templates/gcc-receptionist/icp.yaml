@@ -1,0 +1,22 @@
+# GCC AI receptionist — Riyadh-first (2026-07-27 market-entry analysis)
+target:
+  description: "Owner-operated GCC service businesses that win work on the phone and
+    lose it after hours: private dental/derm/aesthetic clinics, salons and spas, real
+    estate brokerages, home services (AC/plumbing/electrical), restaurants and car
+    service centres. Saudi first; Dubai treated as later, crowded expansion."
+  countries: [SA, AE, QA, KW, BH, OM]
+  business_type: phone-led SMB service businesses
+wedge: after-hours and missed-call recovery, then appointment booking / no-show reduction
+signals_of_fit:
+  - phone number is the primary call to action on the site
+  - no online booking, or booking is a contact form only
+  - published opening hours that end well before customer demand does
+  - multi-location or multi-practitioner (call volume exceeds one receptionist)
+disqualify:
+  - already runs a modern online booking system with real-time availability
+  - generic mailbox only, no reachable decision-maker
+notes:
+  - Arabic dialect quality is the entry ticket, not a feature; the copy commits to
+    the recipient country's own dialect via pitch.json dialect_names.
+  - Clinics carry health-data residency (PDPL) obligations; relevant at onboarding,
+    not at outreach.

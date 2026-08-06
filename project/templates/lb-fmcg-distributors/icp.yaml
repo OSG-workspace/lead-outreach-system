@@ -1,0 +1,22 @@
+icp_name: Lebanon FMCG Distributors & Industrial Groups
+description: >
+  FMCG/consumer-goods distributors and industrial groups whose field reps
+  build shop orders from memory and whose collections are reconciled only at
+  month end. Constant "van salesman"/"collector"/"credit controller" hiring is
+  the visible sign of that manual load. Offer: OSG (David Geha) builds a
+  custom AI system around that exact gap. Fixed, user-approved copy (no
+  signal variation); every send still requires a real named decision-maker
+  with a direct email.
+
+geography: LB
+country_filter: LB
+vertical: fmcg
+
+target_person:
+  - Commercial Director (rep-copilot angle)
+  - Sales Director (rep-copilot angle)
+  - CFO (collections angle)
+
+draft_mode: template
+no_emdash: true
+keep_signature_link: true

@@ -1,0 +1,24 @@
+# LinkedIn channel — crontab lines. NOT INSTALLED. Review, then `crontab -e`.
+# Times are the machine's local time. Set CRON_TZ so they track Europe/Paris.
+CRON_TZ=Europe/Paris
+LI=<home>/lead-outreach-system/project/linkedin
+
+# 09:10 weekdays — THE WHOLE SEND SIDE, one command.
+# Tops up today's invites from the backlog, sends them paced across the window,
+# sweeps for acceptances, and DMs whoever accepted. Zero LLM calls: all the
+# reasoning happened at fire time. Drop --live to keep it in dry-run.
+#
+# It requires the LinkedIn Chrome to be running (scripts/start_chrome.sh) and
+# exits 2 with an actionable message if it is not — so a laptop that was closed
+# simply skips the day rather than half-sending.
+#
+# Overlap is prevented by the senders' own PID-checked lockfiles (lib/lock.js),
+# NOT by flock(1) — macOS does not ship flock, and the line that used to wrap
+# these exited 127 and silently sent nothing at all.
+10 9 * * 1-5  cd $LI && bash scripts/daily.sh --live >> state/daily.log 2>&1
+
+# 18:00 weekdays — heartbeat. Non-zero exit == something failed silently.
+0 18 * * 1-5  cd $LI && node scripts/heartbeat.js >> state/heartbeat.log 2>&1
+
+# macOS note: cron under launchd has a minimal PATH. If `claude`/`node` are not
+# found, use absolute paths (`which claude`, `which node`) in the lines above.

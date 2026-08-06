@@ -1,0 +1,13 @@
+# Worldwide — high-call-volume metros across regions
+London|GB|51.5074|-0.1278|0.20
+Dublin|IE|53.3498|-6.2603|0.12
+Toronto|CA|43.6532|-79.3832|0.20
+Sydney|AU|-33.8688|151.2093|0.25
+Singapore|SG|1.3521|103.8198|0.15
+Dubai|AE|25.2048|55.2708|0.25
+New York|US|40.7128|-74.0060|0.22
+Los Angeles|US|34.0522|-118.2437|0.25
+Madrid|ES|40.4168|-3.7038|0.15
+Milan|IT|45.4642|9.1900|0.12
+Amsterdam|NL|52.3676|4.9041|0.12
+Johannesburg|ZA|-26.2041|28.0473|0.18

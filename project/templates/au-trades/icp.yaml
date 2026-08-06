@@ -1,0 +1,52 @@
+# au-trades — AI Receptionist for Australian emergency trade services.
+# Created 2026-07-21 from the user's brief. Same offer and fixed email copy as
+# eu-hotels (AI receptionist, zero cost, commission only), tailored to
+# Australia: the missed-call problem here is a tradie on the tools or on
+# another job, not a hotel front desk. pitch.json says "natural Australian
+# English" per user direction (no multi-language claim).
+name: au-trades
+channel: email
+draft_mode: template          # fixed AI-receptionist pitch via pitch.json
+# Sourcing (sourcing.json): method "search" via source-agent-au — DDG queries
+# per city+angle. Map method was NOT chosen: the built-in Overpass place table
+# is EU-only, and the fit signals (emergency/24-7 wording, review counts,
+# phone-led sites) are search-visible, not OSM tags.
+countries: [AU]
+
+target:
+  vertical: trades            # residential plumbing, electrical, HVAC/air-con, hot water repair
+  regions:
+    - Sydney metro (incl. Parramatta, Penrith, Sutherland Shire, Hills District)
+    - Melbourne metro (incl. Geelong, Frankston, Dandenong, Werribee)
+    - Brisbane metro (incl. Logan, Ipswich, Redlands)
+    - Gold Coast
+    - Perth metro (incl. Joondalup, Fremantle, Rockingham)
+    - Adelaide metro
+  # QUALIFIED CLIENT = a small owner-operated emergency trade business that
+  # lives off inbound phone calls. Every missed call while the owner is on the
+  # tools, on another job, or asleep is a lost emergency callout — exactly the
+  # gap the AI receptionist fills.
+  must_be:
+    - small and independently owned (2-20 employees, not a franchise or national chain)
+    - phone-led inbound work — phone number prominent on website and Google Business Profile
+    - advertises emergency / 24-7 / same-day / after-hours callouts (or ranks/advertises for "emergency <trade> <city>" terms)
+    - established local operator — active Google Business Profile, 20+ reviews, 4.0+ stars
+    - working website with a publicly listed business email (Australian Spam Act compliant outreach)
+    - reachable at a direct decision-maker email (owner / director / GM) — generic info@/admin@ is dropped
+  nice_to_have:
+    - visible use of trade job-management software (ServiceM8, Tradify, simPRO, Fergus, AroFlo)
+  exclude:
+    - franchises and national brands (Jim's, Laser, O'Brien, Metropolitan, Mr Emergency, 1300-national networks)
+    - companies with an in-house call centre or staffed 24/7 reception
+    - pure new-construction or commercial-only contractors with no residential service callouts
+    - businesses with no published email
+
+pitch: 24/7 AI receptionist for overflow + after-hours calls. Picks up only the
+  calls that go unanswered (on the tools, after hours, line busy), speaks
+  natural Australian English, answers service and callout questions, and books
+  jobs straight into the calendar. Zero setup, no monthly fee, commission only.
+  Fixed copy in pitch.json (no per-lead variation).
+
+qualification:
+  min_score: 82
+  non_generic_email_required: true   # enforced at Stage 5.5 enrichment

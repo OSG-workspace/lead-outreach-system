@@ -36,7 +36,7 @@ Added MailScout as an optional complementary enrichment step. Two strategies:
 MailScout is already installed. Verify:
 
 ```bash
-cd <home>/Desktop/lead-outreach-system/project
+cd <home>/lead-outreach-system/project
 ./tools/venv/bin/python -c "from mailscout import Scout; print('✓ MailScout ready')"
 ```
 
@@ -45,7 +45,7 @@ cd <home>/Desktop/lead-outreach-system/project
 ### Option A: Sequential (crawl4ai + MailScout)
 
 ```bash
-cd <home>/Desktop/lead-outreach-system/project
+cd <home>/lead-outreach-system/project
 
 ./tools/run.sh tools/scripts/run_campaign.py \
     --run-slug 2026-05-22-gcc-consumer-chains-mailscout \
@@ -64,7 +64,7 @@ cd <home>/Desktop/lead-outreach-system/project
 ### Option B: MailScout only (faster)
 
 ```bash
-cd <home>/Desktop/lead-outreach-system/project
+cd <home>/lead-outreach-system/project
 
 # First, enrich the source-fit leads
 ./tools/venv/bin/python tools/scripts/enrich_emails_mailscout.py \
@@ -136,16 +136,16 @@ MailScout enrichment includes:
   "id": "...",
   "name": "Care & Beauty Medical Complex",
   "url": "...",
-  "email": "care@cbmclinic.com.sa",        // Best pattern candidate
+  "email": "care@exampleclinic.com.sa",        // Best pattern candidate
   "email_class": "person",                  // person/personal/role/junk
   "email_source": "mailscout_pattern",     // Indicates pattern-based
   "email_confidence": 75,                   // 75 = pattern-based (vs 95+ for website-verified)
-  "dm_email": "care@cbmclinic.com.sa",     // Set if person-class
+  "dm_email": "care@exampleclinic.com.sa",     // Set if person-class
   "raw": {
     "mailscout_candidates": [
-      "care@cbmclinic.com.sa",
-      "beauty@cbmclinic.com.sa",
-      "cbmclinic@cbmclinic.com.sa",
+      "care@exampleclinic.com.sa",
+      "beauty@exampleclinic.com.sa",
+      "info@exampleclinic.com.sa",
       ...
     ]
   }

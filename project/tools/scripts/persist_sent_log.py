@@ -167,7 +167,11 @@ def append_whatsapp_rows(wa_jsonl: Path, sent_log: Path, run_slug: str, contact_
         send = json.loads(line)
         if send.get("result") != "sent":
             continue
-        phone = re.sub(r"\D", "", (send.get("to_jid") or "").split("@", 1)[0] or (send.get("to_phone") or ""))
+        # Prefer to_phone: since WhatsApp's LID migration, to_jid may be a LID
+        # (`<opaque-id>@lid`) whose digits are NOT the phone number. The
+        # `wa:` token must stay the real phone, because that is what the
+        # send-time dedup net compares against.
+        phone = re.sub(r"\D", "", (send.get("to_phone") or "") or (send.get("to_jid") or "").split("@", 1)[0])
         if not phone or phone in existing_phones:
             continue
         contact = contact_index.get(send.get("lead_id"), {})

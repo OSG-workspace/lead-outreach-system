@@ -14,8 +14,9 @@ Two phases, both run by the /fire orchestrator:
          gap-writer Haiku per batch file (max parallelism, foreground).
 
   merge  reads all gap-out-*.json, joins to leads-with-contact.json, enforces
-         the email contract (Mr./Mrs.+surname salutation, direct email only,
-         no money words, automatelb.com link present, no em/en dashes), and
+         the email contract (personal salutation: Mr./Mrs.+surname, or bare
+         first name when no surname was resolvable; direct email only,
+         no money words, osgdev.com link present, no em/en dashes), and
          writes emails-drafted.json (the Stage 7 send input). Skips/non-compliant
          drafts are dropped. Halts (exit 5) only if zero drafts survive.
 
@@ -41,6 +42,15 @@ RUN_SLUG = ROOT.name
 # Pages worth reading first (the gap usually shows on these).
 PAGE_PRIORITY = ["home", "index", "contact", "contactus", "about", "aboutus",
                  "team", "ourteam", "attorneys", "people", "staff", "services"]
+
+
+def salutation_of(lead: dict) -> str:
+    """`Mr./Mrs. <Surname>` when surname + gender exist, else the first name
+    (one confirmed name component is enough, per the CLAUDE.md contract)."""
+    last = lead.get("contact_last_name", "").strip()
+    title = lead.get("contact_title", "").strip()
+    first = lead.get("contact_first_name", "").strip()
+    return f"{title} {last}" if (last and title in {"Mr.", "Mrs."}) else first
 
 
 def load_with_contact() -> list[dict]:
@@ -94,6 +104,7 @@ def phase_prep() -> None:
         title = lead.get("contact_title", "")
         first = lead.get("contact_first_name", "")
         last = lead.get("contact_last_name", "")
+        salutation = salutation_of(lead)
         batch_path.write_text(
             f"LeadId: {lead['lead_id']}\n"
             f"LeadSlug: {lead['lead_slug']}\n"
@@ -101,6 +112,7 @@ def phase_prep() -> None:
             f"Vertical: {lead.get('vertical','')}\n"
             f"Website: {lead['website']}\n"
             f"Contact: {title} {last}  (first={first} last={last})\n"
+            f"Salutation: Hello {salutation},\n"
             f"ContactEmail: {lead.get('contact_email','')}\n"
             f"Signal: {lead.get('signal','')}  ({lead.get('signal_evidence','')})\n"
             f"HtmlFiles:\n{html_block}\n"
@@ -122,6 +134,18 @@ MONEY_RE = re.compile(
     re.IGNORECASE,
 )
 AI_SUBJECT_RE = re.compile(r"\bai\b", re.IGNORECASE)
+
+# Every outreach signature carries the Instagram handle. The HTML shell renders
+# it as a styled signature line; this keeps the plain-text part (Brevo
+# textContent) in sync. Appended, never gated, so no lead is dropped over it.
+INSTAGRAM_LINE = "Instagram: dave.automates"
+INSTAGRAM_RE = re.compile(r"[Ii]nstagram\s*[:@]?\s*@?dave\.automates")
+
+
+def with_instagram(body: str) -> str:
+    body = body.rstrip()
+    return body if INSTAGRAM_RE.search(body) else f"{body}\n{INSTAGRAM_LINE}"
+
 
 GENERIC_LOCAL_PARTS = {
     "info", "contact", "hello", "inquiries", "enquiries", "enquiry",
@@ -182,18 +206,19 @@ def phase_merge() -> None:
 
         last = lead.get("contact_last_name", "").strip()
         title = lead.get("contact_title", "").strip()
-        expected_open = f"Hello {title} {last},"
-        if not body_text.startswith(f"Hello {title} ") or last not in body_text.split("\n", 1)[0]:
+        expected_open = f"Hello {salutation_of(lead)},"
+        if not body_text.startswith(expected_open):
             dropped_salutation += 1
             continue
         if MONEY_RE.search(body_text) or MONEY_RE.search(subject):
             dropped_money += 1
             continue
-        if "automatelb.com" not in body_text:
+        if "osgdev.com" not in body_text:
             dropped_no_link += 1
             continue
         # subject must not contain the literal "AI" buzzword
         subject = AI_SUBJECT_RE.sub("the", subject).strip()
+        body_text = with_instagram(body_text)
 
         paragraphs = body_text.split("\n\n")
         body_html = "\n".join(f"<p>{para.replace(chr(10), '<br>')}</p>" for para in paragraphs)
@@ -203,7 +228,7 @@ def phase_merge() -> None:
             "lead_slug": lead["lead_slug"],
             "to_email": to_email,
             "to_name": f"{lead.get('contact_first_name','')} {last}".strip(),
-            "salutation": f"{title} {last}",
+            "salutation": salutation_of(lead),
             "contact_first_name": lead.get("contact_first_name", ""),
             "contact_last_name": last,
             "contact_title": title,
@@ -269,7 +294,7 @@ def phase_merge() -> None:
     print(f"  skipped by gap-writer (no concrete gap): {skipped}")
     print(f"  dropped salutation-contract:             {dropped_salutation}")
     print(f"  dropped money-talk:                      {dropped_money}")
-    print(f"  dropped missing automatelb.com link:     {dropped_no_link}")
+    print(f"  dropped missing OSG site link:           {dropped_no_link}")
     print(f"  dropped no-direct-email:                 {dropped_no_email}")
     print(f"  dropped lead-not-found:                  {dropped_no_lead}")
     print(f"  dropped near-identical (>85% Jaccard):   {dropped_similar}")

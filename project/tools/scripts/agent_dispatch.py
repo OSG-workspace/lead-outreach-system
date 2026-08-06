@@ -39,11 +39,28 @@ def _agent_md(name: str) -> str:
     return p.read_text()
 
 
-def agent_body(name: str) -> str:
-    """The instructions = everything after the YAML frontmatter."""
+# Optional blocks in an agent definition, fenced by
+#   <!-- OPTIONAL:<key> -->  …  <!-- /OPTIONAL:<key> -->
+# and dropped from the dispatched system prompt unless the caller opts in.
+# The name-finder's phone ladder is half its 17 KB body and is dead weight on an
+# email-only run (EnrichPhone was `no` on 208/208 batches of the last fire), yet
+# it shipped as system prompt on every one of those dispatches.
+_OPTIONAL_RE = re.compile(
+    r"[ \t]*<!--\s*OPTIONAL:(?P<key>[\w-]+)\s*-->.*?<!--\s*/OPTIONAL:(?P=key)\s*-->[ \t]*\n?",
+    re.S)
+
+
+def agent_body(name: str, include: set[str] | None = None) -> str:
+    """The instructions = everything after the YAML frontmatter.
+
+    `include` names the OPTIONAL blocks to keep; every other optional block is
+    stripped. None/empty keeps nothing optional."""
     md = _agent_md(name)
     parts = md.split("---", 2)
-    return (parts[2] if len(parts) >= 3 else md).strip()
+    body = (parts[2] if len(parts) >= 3 else md).strip()
+    keep = include or set()
+    return _OPTIONAL_RE.sub(
+        lambda m: m.group(0) if m.group("key") in keep else "", body).strip()
 
 
 def agent_tools(name: str) -> str:
@@ -57,12 +74,13 @@ def agent_model(name: str) -> str:
 
 
 def dispatch_one(agent: str, prompt: str, *, timeout: int = 300,
-                 cwd: str | None = None) -> tuple[int, str, str]:
+                 cwd: str | None = None,
+                 include: set[str] | None = None) -> tuple[int, str, str]:
     """Run ONE sub-agent headless. Returns (returncode, stdout, stderr).
     The agent writes its result file itself; stdout is just its terse 'Done:' line."""
     cmd = [
         "claude", "-p", prompt,
-        "--append-system-prompt", agent_body(agent),
+        "--append-system-prompt", agent_body(agent, include),
         "--allowedTools", agent_tools(agent),
         "--model", agent_model(agent),
         "--output-format", "text",
@@ -77,13 +95,14 @@ def dispatch_one(agent: str, prompt: str, *, timeout: int = 300,
 
 def dispatch_pool(agent: str, prompts: list[str], *, max_workers: int = 12,
                   timeout: int = 300, cwd: str | None = None,
-                  on_done=None) -> list[tuple[int, str, str]]:
+                  on_done=None, include: set[str] | None = None) -> list[tuple[int, str, str]]:
     """Run `agent` over each prompt in `prompts`, up to max_workers in parallel.
     Mirrors the Agent-tool fan-out (one agent per query / per lead). Returns
     results in input order. `on_done(i, rc, out)` is called as each finishes."""
     results: list[tuple[int, str, str] | None] = [None] * len(prompts)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        fut = {ex.submit(dispatch_one, agent, p, timeout=timeout, cwd=cwd): i
+        fut = {ex.submit(dispatch_one, agent, p, timeout=timeout, cwd=cwd,
+                         include=include): i
                for i, p in enumerate(prompts)}
         for f in concurrent.futures.as_completed(fut):
             i = fut[f]

@@ -177,7 +177,7 @@ def main() -> None:
     env = {**load_env(project_root / ".env"), **os.environ}
     api_key = decode_brevo_key(env.get("BREVO_MCP_TOKEN", ""))
     sender_email = env.get("BREVO_SENDER_EMAIL", "")
-    sender_name = env.get("BREVO_SENDER_NAME", "Automate")
+    sender_name = env.get("BREVO_SENDER_NAME", "OSG")
     reply_to_email = env.get("BREVO_REPLY_TO", "") or sender_email
     reply_to_name = sender_name
 

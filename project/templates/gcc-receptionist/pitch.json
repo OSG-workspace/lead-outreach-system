@@ -1,0 +1,31 @@
+{
+  "_comment": "GCC AI-receptionist pitch. Same fixed AI-receptionist copy as eu-hotels (zero-cost / commission hook, free video, no em-dashes, no signal variation) with ONE addition per the 2026-07-27 user directive: the agent speaks the native Arabic dialect of the recipient's own country, rendered from the {dialect} slot via dialect_names below. The after-hours / missed-call recovery wedge is the lead, per the market analysis.",
+  "country_names": {
+    "SA": "Saudi Arabia",
+    "AE": "the UAE",
+    "QA": "Qatar",
+    "KW": "Kuwait",
+    "BH": "Bahrain",
+    "OM": "Oman"
+  },
+  "dialect_names": {
+    "SA": "Saudi Arabic, both Najdi and Hejazi",
+    "AE": "Emirati Arabic",
+    "QA": "Qatari Arabic",
+    "KW": "Kuwaiti Arabic",
+    "BH": "Bahraini Arabic",
+    "OM": "Omani Arabic"
+  },
+  "default_dialect": "Gulf Arabic",
+  "vertical_names": {
+    "clinic": "clinics and aesthetic centres",
+    "salon": "salons and spas",
+    "realestate": "real estate brokerages",
+    "homeservices": "home service companies",
+    "restaurant": "restaurants",
+    "carservice": "car service centres"
+  },
+  "default_vertical": "businesses",
+  "subject_template": "The calls {name} is missing after hours",
+  "body_template": "Hi {salutation},\n\nI'd like to help {name} capture the business it is currently losing to missed calls, without charging you anything until that business actually arrives.\n\nWe have built a 24/7 AI receptionist that does not replace anyone on your team. She only picks up the calls that go unanswered, after hours, on Fridays, during Ramadan hours, or when your reception is already on another line. She speaks {dialect} the way your customers actually speak it, switches to English mid sentence when the caller does, answers the routine questions, and books the appointment straight into your system. Setup is free. There is no monthly fee. We only earn a small commission when she books a paying customer for you.\n\nIf you would like to hear her first, this short video shows an example of how she could sound: https://video.osgdev.com. It plays straight in your browser, nothing to download.\n\nI am David Geha at OSG (osgdev.com), AI consultants working with {vertical} across the Gulf.\n\nAre you free for a 20-minute demo call this week? I will walk you through exactly how it works.\n\nBest,\nDavid Geha\nOSG, osgdev.com\nInstagram: dave.automates"
+}

@@ -1,0 +1,18 @@
+{
+  "_comment": "AU emergency-trades AI-receptionist pitch. Same copy as the eu-hotels campaign, tailored for Australia per user direction 2026-07-21: no multi-language claim, she speaks natural Australian English; hotel wording swapped for trade-callout wording (jobs, on the tools, calendar). Fixed copy, no signal variation. Money/commission wording is intentional (the hook). No em-dashes. Renders through email_template.py at send.",
+  "country_names": {
+    "AU": "Australia"
+  },
+  "vertical_names": {
+    "plumbing": "plumbing companies",
+    "electrical": "electrical companies",
+    "hvac": "air conditioning and heating companies",
+    "hotwater": "hot water repair companies",
+    "trades": "trade service businesses",
+    "trades-emergency": "emergency trade service businesses",
+    "trades-shop": "trade service businesses"
+  },
+  "default_vertical": "trade services",
+  "subject_template": "Adding booked jobs to {name}, at zero cost",
+  "body_template": "Hi {salutation},\n\nI'd like to help {name} capture the jobs it is currently losing to missed calls, without charging you anything until those jobs actually happen.\n\nWe have built a 24/7 AI receptionist that does not replace anyone on your team. She only picks up the calls that go unanswered, after hours, when you are out on the tools, or when the line is already busy. She speaks natural Australian English, answers questions about your services and callout availability, and books jobs straight into your calendar. Setup is free. There is no monthly fee. We only earn a small commission when she books a paying job for you.\n\nIf you would like to hear her first, this short video shows an example of how she could sound in English: https://video.osgdev.com. It plays straight in your browser, nothing to download.\n\nI am David Geha at OSG (osgdev.com), AI consultants working with trade service businesses across Australia.\n\nAre you free for a 20-minute demo call this week? I will walk you through exactly how it works.\n\nBest,\nDavid Geha\nOSG, osgdev.com\nInstagram: dave.automates"
+}

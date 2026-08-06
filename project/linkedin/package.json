@@ -1,0 +1,21 @@
+{
+  "name": "lead-outreach-linkedin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node queue/generate.js",
+    "dry-run": "node send/sender.js --dry-run",
+    "live": "node send/sender.js --live",
+    "heartbeat": "node scripts/heartbeat.js",
+    "test": "node --test 'tests/tier1/*.test.js'",
+    "test:tier2": "node --test --test-force-exit 'tests/tier2/*.test.js'",
+    "test:all": "node --test --test-force-exit 'tests/tier1/*.test.js' 'tests/tier2/*.test.js'"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

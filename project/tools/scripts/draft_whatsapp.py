@@ -7,8 +7,9 @@ lead that has a resolvable WhatsApp number (contact_phone).
 
 Channel rules:
 - WhatsApp messages are shorter than email (3-4 short paragraphs max).
-- Salutation: `Hello Mr. <Surname>,` or `Hello Mrs. <Surname>,` (same
-  contract as email, per CLAUDE.md).
+- Salutation: `Hello Mr./Mrs. <Surname>,` when surname + gender exist, else
+  `Hello <First>,` — one confirmed name component is enough (same contract
+  as email, per CLAUDE.md).
 - NO em-dashes or en-dashes anywhere in body copy. Use commas.
 - One link max (the signature website).
 - No subject line (WhatsApp has none).
@@ -26,12 +27,20 @@ The Node sender (project/bridge/send_campaign.js) consumes this file.
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from email_utils import COUNTRY_NAMES_ISO
 
 p = argparse.ArgumentParser()
 p.add_argument("--run-dir", required=True)
 p.add_argument("--sent-log", default=None,
                help="Master dedup log (default: <repo>/vault/lead-outreach/sent-log.md)")
+p.add_argument("--fallback-only", action="store_true",
+               help="draft ONLY leads Stage 5.5 marked contact_channel=whatsapp_fallback "
+                    "(no verified direct email; owner reached on WhatsApp instead). "
+                    "Leads with a verified email stay email-only and are skipped here.")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
@@ -39,7 +48,7 @@ WITH_CONTACT = ROOT / "leads-with-contact.json"
 OUT = ROOT / "whatsapp-drafted.json"
 RUN_SLUG = ROOT.name
 # ROOT is <repo>/project/runs/<slug>; the vault lives at <repo>/vault.
-SENT_LOG = Path(args.sent_log) if args.sent_log else ROOT.parents[2] / "vault" / "lead-outreach" / "sent-log.md"
+SENT_LOG = Path(args.sent_log) if args.sent_log else ROOT.parents[1] / "vault" / "lead-outreach" / "sent-log.md"
 
 if not WITH_CONTACT.exists():
     raise SystemExit(f"ABORT: {WITH_CONTACT} missing — Stage 5.5 must run first")
@@ -86,7 +95,7 @@ SENT_PHONES, SENT_EMAILS, SENT_DOMAINS, SENT_SLUGS = load_sent_index(SENT_LOG)
 # Pitch templates. Per-run `pitch.json` can override any of these keys; this
 # matches the email drafter's overlay so both channels stay in sync.
 
-DEFAULT_COUNTRY_NAMES = {"AE": "the UAE", "SA": "Saudi Arabia", "QA": "Qatar", "BH": "Bahrain", "KW": "Kuwait"}
+DEFAULT_COUNTRY_NAMES = dict(COUNTRY_NAMES_ISO)   # broad ISO map; pitch.json overrides
 DEFAULT_VERTICAL_NAMES = {
     "clinic": "clinic groups", "vet": "veterinary clinics",
     "optical": "optical chains", "fitness": "fitness brands",
@@ -108,11 +117,11 @@ DEFAULT_SIGNAL_OPENERS = {
 DEFAULT_WA_BODY_TEMPLATE = (
     "Hello {salutation},\n\n"
     "{opener}\n\n"
-    "Automate designs custom AI systems for mid-market companies in the GCC. "
+    "OSG designs custom AI systems for mid-market companies in the GCC. "
     "For {vertical}, we build the intake and handoff workflows around the tools "
     "already in place. You own the system, no monthly platform lock-in.\n\n"
     "Worth a brief call this week?\n\n"
-    "David Geha, Automate\nautomatelb.com"
+    "David Geha, OSG\nosgdev.com\nInstagram: dave.automates"
 )
 
 PITCH_FILE = ROOT / "pitch.json"
@@ -187,7 +196,9 @@ def draft(lead: dict, normalized_phone: str) -> dict:
     opener_tpl = SIGNAL_OPENERS.get(signal, SIGNAL_OPENERS["phone_led"])
     opener = opener_tpl.format(name=name, country=country, vertical=vertical)
 
-    salutation = f"{lead['contact_title']} {lead['contact_last_name']}"
+    _last = lead["contact_last_name"]
+    _title = lead["contact_title"]
+    salutation = f"{_title} {_last}" if (_last and _title) else lead["contact_first_name"]
     fmt = dict(name=name, country=country, vertical=vertical, salutation=salutation, opener=opener)
     body_text = WA_BODY_TEMPLATE.format_map(fmt)
     body_text = _strip_dashes(body_text)
@@ -199,7 +210,7 @@ def draft(lead: dict, normalized_phone: str) -> dict:
         "to_jid": f"{normalized_phone}@c.us",
         "contact_email": (lead.get("to_email") or lead.get("contact_email") or "").strip().lower(),
         "website": lead.get("website", ""),
-        "to_name": f"{lead['contact_first_name']} {lead['contact_last_name']}",
+        "to_name": f"{lead['contact_first_name']} {lead['contact_last_name']}".strip(),
         "salutation": salutation,
         "contact_first_name": lead["contact_first_name"],
         "contact_last_name": lead["contact_last_name"],
@@ -227,15 +238,20 @@ for line in WITH_CONTACT.read_text().splitlines():
         leads.append(json.loads(line))
 
 drafts = []
+skipped_email_channel = 0
 dropped_no_contact = 0
 dropped_no_phone = 0
 dropped_bad_phone = 0
 dropped_already_sent = 0
 for l in leads:
+    if args.fallback_only and l.get("contact_channel") != "whatsapp_fallback":
+        skipped_email_channel += 1
+        continue
     first = l.get("contact_first_name", "").strip()
     last = l.get("contact_last_name", "").strip()
     title = l.get("contact_title", "").strip()
-    if not first or not last or title not in {"Mr.", "Mrs."}:
+    # One name component is enough (per CLAUDE.md salutation contract).
+    if not ((last and title in {"Mr.", "Mrs."}) or first):
         dropped_no_contact += 1
         continue
     raw_phone = (l.get("contact_phone") or "").strip()
@@ -260,6 +276,8 @@ for l in leads:
 drafts.sort(key=lambda d: -d["score"])
 OUT.write_text("\n".join(json.dumps(d, ensure_ascii=False) for d in drafts) + "\n")
 print(f"Drafted {len(drafts)} WhatsApp messages (input: {WITH_CONTACT.name})")
+if args.fallback_only:
+    print(f"  skipped email-channel leads:      {skipped_email_channel}  (--fallback-only)")
 print(f"  dropped no-contact (name/title):  {dropped_no_contact}")
 print(f"  dropped no-phone:                 {dropped_no_phone}  (decision-maker WhatsApp required)")
 print(f"  dropped phone-unparseable:        {dropped_bad_phone}")

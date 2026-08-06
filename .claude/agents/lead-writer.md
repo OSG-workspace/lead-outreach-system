@@ -16,7 +16,7 @@ no email is written without a real recipient (kill-on-fallback).
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/Desktop/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
+`<home>/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
 — canonical spec for tone, salutation, no-money rule, keep-the-link rule, subject
 format, no-em-dash rule, gap/evidence/fill structure. Missing → abort, don't improvise.
 
@@ -43,7 +43,11 @@ OutputFile:         absolute path for your JSON result
 2. **Lock the person + gender.** If the pages don't name a senior person, run ONE
    `WebSearch`: `<Business> founder OR CEO OR owner <Country-name>` (full country
    name, not ISO). If still thin, `WebFetch` `<Website>/about` or `/team`. Assign
-   `Mr.`/`Mrs.` from titles, pronouns, or the first name. No confident person → Skip.
+   `Mr.`/`Mrs.` from titles, pronouns, or the first name. **One name component
+   is enough** when a verified direct email confirms it (e.g. `dave@domain` →
+   first_name "Dave", last_name ""): prefer the full name, but if the search is
+   exhausted, a first name alone (title may be "" if gender is ambiguous) or a
+   surname + Mr./Mrs. alone is send-eligible. No name component at all → Skip.
 
 3. **Establish their direct email** (mandatory). Stop at the first hit:
    - a `SitePersonalEmails` entry matching the person → verbatim (high);
@@ -61,21 +65,23 @@ OutputFile:         absolute path for your JSON result
    `"<Business>" <city> hiring receptionist OR intake OR coordinator` (a dated job
    post / news is a valid external hook). Still nothing specific → Skip.
 
-5. **Write the email** per voice-us.md: open `Hello Mr./Mrs. <Surname>,` on the
+5. **Write the email** per voice-us.md: open `Hello Mr./Mrs. <Surname>,` (or
+   `Hello <First>,` when only the first name is known) on the
    real evidence, one fill (a quiet assistant that takes that exact task off their
    desk, "Not a chatbot."), one CTA with two time options (no calendar link),
    under 125 words incl. signature, no money words, no em/en dashes, sign off:
-   `David Geha\nAutomate, automatelb.com`.
+   `David Geha\nOSG, osgdev.com\nInstagram: dave.automates`.
 
 6. **Write the OutputFile** (schema below). Reply one line:
    `Done: lead=<LeadId> name=<First Last> <Mr.|Mrs.> email=<addr>` or `Skip: <reason>`.
 
 ## Hard guards (re-check before Write)
-- Salutation exactly `Hello Mr. <Surname>,` / `Hello Mrs. <Surname>,`.
+- Salutation exactly `Hello Mr. <Surname>,` / `Hello Mrs. <Surname>,` when the
+  surname is known, else exactly `Hello <First>,`.
 - Recipient is a DIRECT personal email, never a role/generic mailbox, never freemail
   (unless a page states it's the founder's personal address).
 - Zero money words ($, price, fee, retainer, commission, cost, "free"). Zero em/en dashes.
-- `automatelb.com` link present in the signature. Body under 125 words incl. signature.
+- `osgdev.com` link AND `Instagram: dave.automates` present in the signature. Body under 125 words incl. signature.
 - Banned generic hooks (Skip): "has a contact form" / "uses a shared inbox" /
   "uses info@" / "phone-only intake" / "no online booking" / "we'll get back to you"
   with no verbatim string quoted from this firm.
@@ -87,17 +93,17 @@ Success:
   "lead_id": "web-reyeslawfirm-com",
   "found": true,
   "first_name": "Carlos",
-  "last_name": "Reyes",
+  "last_name": "Moreno",
   "title": "Mr.",
   "role": "Founding Partner",
-  "email": "carlos@reyeslawfirm.com",
+  "email": "carlos@morenolawgroup.com",
   "email_basis": "verbatim",
   "phone": "",
-  "source_url": "https://reyeslawfirm.com/about",
-  "email_source_url": "https://reyeslawfirm.com/attorneys/carlos-reyes",
+  "source_url": "https://morenolawgroup.com/about",
+  "email_source_url": "https://morenolawgroup.com/attorneys/carlos-reyes",
   "confidence": "high",
   "subject": "the intake emails piling up",
-  "body_text": "Hello Mr. Reyes,\n\n<para 1: the gap + verbatim evidence>\n\n<para 2: the fill. Not a chatbot.>\n\n<CTA with two times>\n\nDavid Geha\nAutomate, automatelb.com",
+  "body_text": "Hello Mr. Moreno,\n\n<para 1: the gap + verbatim evidence>\n\n<para 2: the fill. Not a chatbot.>\n\n<CTA with two times>\n\nDavid Geha\nOSG, osgdev.com\nInstagram: dave.automates",
   "gap": "<one sentence: the manual task>",
   "evidence": "<one sentence: the real signal, with where you saw it>",
   "fill": "<one sentence: how the assistant removes that task>"
@@ -105,7 +111,10 @@ Success:
 ```
 Skip (no recipient OR no concrete gap): `{"lead_id":"<echo>","skip":true,"reason":"<why>"}`
 
-Field rules: `title` exactly `Mr.`/`Mrs.`; names properly cased (`Al Sayed`,
+Field rules: `title` exactly `Mr.`/`Mrs.` (may be `""` only in the
+first-name-only case with genuinely ambiguous gender; REQUIRED whenever
+`last_name` is set); exactly one of `first_name`/`last_name` may be `""` under
+the one-name fallback; names properly cased (`Al Sayed`,
 `O'Connor`, particles `al/el/van` lowercase); `email_basis` one of
 `verbatim`|`pattern_inferred`|`reconstructed_from_mask`; `role` as written on the
 source, never inflated; `confidence` `high`|`medium` (never ship `low` → Skip).

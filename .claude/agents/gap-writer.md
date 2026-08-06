@@ -13,7 +13,7 @@ task this business does by hand.
 
 ## Step 0 — read the voice spec (REQUIRED, first)
 `Read` and follow exactly:
-`<home>/Desktop/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
+`<home>/lead-outreach-system/project/vault/lead-outreach/voice-us.md`
 — the canonical spec for tone, salutation, no-money rule, keep-the-link rule,
 subject format, no-em-dash rule, and gap/evidence/fill structure. If it's
 missing, abort and report — do not improvise voice.
@@ -22,11 +22,16 @@ missing, abort and report — do not improvise voice.
 ```
 LeadId, Business, Vertical, Website
 Contact: Mr./Mrs. <Surname>  (first=… last=…)
+Salutation: Hello <exact salutation to open with>,
 ContactEmail
 Signal: <type>  (e.g. contact_form)
 HtmlFiles:  <abs paths to already-scraped raw_html pages>
 OutputFile: <abs path to gap-out-NNN.json>
 ```
+The `Salutation:` line is authoritative — open the email with EXACTLY that line
+(it is `Hello Mr./Mrs. <Surname>,` when a surname was resolved, or
+`Hello <First>,` when only the first name is known). If the line is absent
+(legacy batch), fall back to `Hello Mr./Mrs. <Surname>,` from the Contact line.
 
 ## Workflow
 1. Read voice-us.md.
@@ -44,18 +49,18 @@ OutputFile: <abs path to gap-out-NNN.json>
    Only after both yield nothing specific may you Skip. Never skip after reading
    the HTML alone.
 4. Name the three (gap, evidence, fill) for THIS business.
-5. Write the email per voice-us.md: `Hello Mr./Mrs. <Surname>,`, open on the real
-   evidence, one fill, one CTA with two time options (no calendar link), under
-   125 words, no money talk, no em-dashes, sign off with the
-   `David Geha / Automate, automatelb.com` link.
+5. Write the email per voice-us.md: open with the input's `Salutation:` line
+   verbatim, then the real evidence, one fill, one CTA with two time options
+   (no calendar link), under 125 words, no money talk, no em-dashes, sign off
+   with the `David Geha / OSG, osgdev.com` link and the `Instagram: dave.automates` line.
 6. Write the OutputFile (schema below).
 7. Reply one line: `Done: wrote <OutputFile>` (or `Skip: <reason>`).
 
 ## Hard guards (re-check before Write)
-- Salutation exactly `Hello Mr. <Surname>,` or `Hello Mrs. <Surname>,`.
+- Salutation exactly the input's `Salutation:` line (`Hello Mr./Mrs. <Surname>,` or `Hello <First>,`).
 - Zero money words: no price, fee, retainer, commission, cost, "free", "$".
 - Zero em/en-dashes (—, –). Use commas / "to".
-- Signature present with the `automatelb.com` link. Body under 125 words incl. signature.
+- Signature present with the `osgdev.com` link AND the `Instagram: dave.automates` line. Body under 125 words incl. signature.
 - **The opening must name something real about THIS firm, not true of its whole
   vertical.** Test: "Would this sentence be true for the firm next door?" If yes,
   it's category-level, not a hook → Skip.
@@ -74,10 +79,10 @@ OutputFile: <abs path to gap-out-NNN.json>
 {
   "lead_id": "web-reyeslawfirm-com",
   "lead_slug": "reyeslawfirm-com",
-  "to_email": "carlos@reyeslawfirm.com",
-  "to_name": "Carlos Reyes",
+  "to_email": "carlos@morenolawgroup.com",
+  "to_name": "Carlos Moreno",
   "subject": "the intake emails piling up",
-  "body_text": "Hello Mr. Reyes,\n\n<para 1>\n\n<para 2>\n\n<CTA>\n\nDavid Geha\nAutomate, automatelb.com",
+  "body_text": "Hello Mr. Moreno,\n\n<para 1>\n\n<para 2>\n\n<CTA>\n\nDavid Geha\nOSG, osgdev.com\nInstagram: dave.automates",
   "gap": "<one sentence: the manual task>",
   "evidence": "<one sentence: the real signal you saw, with where>",
   "fill": "<one sentence: how the assistant removes that task>"

@@ -26,6 +26,33 @@ import re
 from pathlib import Path
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+# ISO-3166 alpha-2 -> readable name, for the drafters' {country} slot. Broad
+# on purpose: the chain must render correct copy for ANY campaign geography
+# without each fixture having to redeclare names (pitch.json `country_names`
+# still overrides, e.g. "the UAE" phrasing). An unknown code falls back to
+# the code itself — but every geography the system sources today is covered.
+COUNTRY_NAMES_ISO = {
+    "AE": "the UAE", "SA": "Saudi Arabia", "QA": "Qatar", "BH": "Bahrain",
+    "KW": "Kuwait", "OM": "Oman", "LB": "Lebanon", "JO": "Jordan", "EG": "Egypt",
+    "ES": "Spain", "IT": "Italy", "FR": "France", "MC": "Monaco", "PT": "Portugal",
+    "GR": "Greece", "DE": "Germany", "AT": "Austria", "CH": "Switzerland",
+    "NL": "the Netherlands", "BE": "Belgium", "LU": "Luxembourg", "CZ": "Czechia",
+    "HU": "Hungary", "HR": "Croatia", "SI": "Slovenia", "ME": "Montenegro",
+    "RS": "Serbia", "AL": "Albania", "MK": "North Macedonia", "BA": "Bosnia and Herzegovina",
+    "TR": "Turkey", "DK": "Denmark", "SE": "Sweden", "NO": "Norway", "FI": "Finland",
+    "IS": "Iceland", "IE": "Ireland", "GB": "the UK", "PL": "Poland", "RO": "Romania",
+    "SK": "Slovakia", "BG": "Bulgaria", "MT": "Malta", "CY": "Cyprus", "EE": "Estonia",
+    "LV": "Latvia", "LT": "Lithuania", "UA": "Ukraine", "MD": "Moldova",
+    "US": "the US", "CA": "Canada", "MX": "Mexico", "BR": "Brazil", "AR": "Argentina",
+    "CL": "Chile", "CO": "Colombia", "PE": "Peru",
+    "AU": "Australia", "NZ": "New Zealand", "JP": "Japan", "KR": "South Korea",
+    "CN": "China", "HK": "Hong Kong", "TW": "Taiwan", "SG": "Singapore",
+    "MY": "Malaysia", "TH": "Thailand", "VN": "Vietnam", "PH": "the Philippines",
+    "ID": "Indonesia", "IN": "India", "PK": "Pakistan", "BD": "Bangladesh",
+    "LK": "Sri Lanka", "IL": "Israel", "ZA": "South Africa", "NG": "Nigeria",
+    "KE": "Kenya", "MA": "Morocco", "TN": "Tunisia", "DZ": "Algeria",
+}
 ROLE_RE = re.compile(
     r"^(info|contact|hello|hi|sales|admin|support|noreply|no-reply|marketing|hr|jobs|"
     r"careers|booking|bookings|appointment|appointments|reception|office|team|enquiry|"
@@ -39,7 +66,13 @@ JUNK_RE = re.compile(
     r"|@(example\.com|example\.org|sentry\.io|wpforms\.com|wixpress\.com|wix\.com|godaddy\.com|"
     r"sentry-next|domain\.com|email\.com|yourdomain\.com|company\.com|surname\.com|"
     r"name\.com|firstname\.com|test\.com|sample\.com|acme\.com|placeholder)"
-    r"|^(\d+x|[a-f0-9]{16,})@",
+    r"|^(\d+x|[a-f0-9]{16,})@"
+    # The same placeholder domains under ANY TLD. The literal list above anchors
+    # `email.com`, so `ihre@email.de` (German "your") walked straight through it
+    # into a qualified lead. The domain itself being the word "email"/"domain"/
+    # "example" is the signal; the TLD is incidental.
+    r"|@(e-?mail|domain|your-?domain|example|beispiel|ejemplo|esempio|exemple)"
+    r"\.[a-z]{2,4}(\.[a-z]{2,3})?$",
     re.IGNORECASE,
 )
 # Form-placeholder local parts that masquerade as real addresses in input fields.
@@ -48,6 +81,23 @@ PLACEHOLDER_LOCALS = {
     "lastname", "fname", "lname", "first.last", "first", "last", "example",
     "sample", "test", "user", "username", "johndoe", "john.doe", "janedoe",
     "jane.doe", "email", "your", "abc", "xyz",
+    # `you@email.com` — 3 chars, so it clears the len<3 guard on its own.
+    "you", "youre",
+    # Initialled forms of the dummy names above (`j.doe@inbox.com` appeared as a
+    # lead's to_email in 7 runs before this).
+    "j.doe", "jdoe", "jdoe1", "jd", "a.b", "x.y", "aa.bb",
+    # The locale-standard placeholder people, which appear in non-English form
+    # placeholders exactly the way John Doe does in English ones.
+    "maxmustermann", "max.mustermann", "erika.mustermann", "mustermann",
+    "jeandupont", "jean.dupont", "jean.martin", "marioorossi", "mario.rossi",
+    "mariorossi", "juan.perez", "juanperez", "jankowalski", "jan.kowalski",
+    "jandoe", "nomeprenome", "nome", "nom", "prenom", "vorname", "nachname",
+    "apellido", "cognome", "imie", "nazwisko",
+    # "your" in the languages this pipeline actually sources in — the direct
+    # equivalents of the `your@`/`youremail@` forms already listed above.
+    # `ihre@email.de` reached a qualified lead record before this.
+    "ihre", "ihr", "deine", "votre", "vos", "ton", "tu", "tuo", "tua", "suo",
+    "su", "seu", "sua", "uw", "jouw", "din", "ditt", "dein",
 }
 FREEMAIL = {
     "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com",

@@ -1,0 +1,24 @@
+icp_name: Lebanon NGOs & International Organizations
+description: >
+  INGO country offices and established national NGOs where program staff
+  clean field data by hand and rewrite the same results into a different
+  template per donor. Daleel Madani / ReliefWeb postings for "M&E officer",
+  "reporting officer", or a paid "report writing consultant" are the visible
+  sign of that manual reporting load. Offer: OSG (David Geha) builds a custom
+  AI system around that exact gap. Fixed, user-approved copy (no signal
+  variation); every send still requires a real named decision-maker with a
+  direct email.
+
+geography: LB
+country_filter: LB
+vertical: ngo
+
+target_person:
+  - Grants Manager (INGOs)
+  - MEAL Manager (INGOs)
+  - Country Director (INGOs)
+  - Executive Director (national NGOs)
+
+draft_mode: template
+no_emdash: true
+keep_signature_link: true

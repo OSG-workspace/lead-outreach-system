@@ -39,19 +39,43 @@ FONT = ("-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,"
 # voice contract: no em/en dashes anywhere in a rendered email.
 _DASH_RE = re.compile(r"\s*[—–]\s*")
 
+# Every outreach signature carries the Instagram handle. Matched here so the
+# plain-text sig block the drafter appends is stripped before _signature()
+# re-renders it as a styled component (no duplicate line in the HTML).
+INSTAGRAM = "dave.automates"
+INSTAGRAM_RE = re.compile(r"[Ii]nstagram\s*[:@]?\s*@?" + re.escape(INSTAGRAM))
+
 
 def _no_dash(s: str) -> str:
     return _DASH_RE.sub(", ", s or "")
 
 
 def _linkify_site(text: str, site: str) -> str:
-    """Turn a bare site mention (automatelb.com) in already-escaped text into a link."""
+    """Turn a bare site mention (osgdev.com) in already-escaped text into a link.
+
+    Bare mentions only: an occurrence preceded by '.', '/', or a word char is
+    part of a longer URL/subdomain (e.g. video.osgdev.com, already anchored by
+    _linkify_urls) and must be left alone.
+    """
     if not site:
         return text
     esc = _html.escape(site)
     anchor = (f'<a href="https://{esc}" '
               f'style="color:{ACCENT};text-decoration:none;">{esc}</a>')
-    return text.replace(esc, anchor)
+    return re.sub(r"(?<![\w./-])" + re.escape(esc) + r"(?![\w-])", anchor, text)
+
+
+# Full URLs in body copy (e.g. the demo-video link) must be clickable, not
+# escaped plain text. Runs on already-escaped text, before _linkify_site;
+# trailing sentence punctuation stays outside the anchor.
+_URL_RE = re.compile(r"https?://[^\s<]+[^\s<.,;:)!?]")
+
+
+def _linkify_urls(text: str) -> str:
+    return _URL_RE.sub(
+        lambda m: (f'<a href="{m.group(0)}" '
+                   f'style="color:{ACCENT};text-decoration:none;">{m.group(0)}</a>'),
+        text)
 
 
 def _body_blocks(body_text: str, site: str) -> str:
@@ -63,13 +87,17 @@ def _body_blocks(body_text: str, site: str) -> str:
     text = _no_dash(body_text.strip())
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
 
-    # Drop a trailing signature block the drafter may have appended.
+    # Drop a trailing signature block the drafter may have appended. The
+    # Instagram line may land in the same block or as its own trailing block.
+    if paras and INSTAGRAM_RE.search(paras[-1]) and len(paras[-1].splitlines()) <= 2:
+        paras = paras[:-1]
     if site and paras and site in paras[-1]:
         paras = paras[:-1]
 
     out = []
     for para in paras:
         safe = _html.escape(para).replace("\n", "<br>")
+        safe = _linkify_urls(safe)
         safe = _linkify_site(safe, site)
         out.append(
             f'<p style="margin:0 0 16px;font-family:{FONT};font-size:15px;'
@@ -78,13 +106,19 @@ def _body_blocks(body_text: str, site: str) -> str:
     return "\n".join(out)
 
 
-def _signature(name: str, company: str, site: str, tagline: str) -> str:
+def _signature(name: str, company: str, site: str, tagline: str, instagram: str = "") -> str:
     site_esc = _html.escape(site)
     name_esc = _html.escape(name)
     company_esc = _html.escape(company)
     tag = (f'<div style="font-family:{FONT};font-size:13px;line-height:1.5;'
            f'color:{MUTE};margin-top:2px;">{_html.escape(_no_dash(tagline))}</div>'
            if tagline else "")
+    ig = ""
+    if instagram:
+        handle = _html.escape(instagram.lstrip("@"))
+        ig = (f'<div style="font-family:{FONT};font-size:14px;color:{MUTE};margin-top:1px;">'
+              f'Instagram: <a href="https://instagram.com/{handle}" '
+              f'style="color:{ACCENT};text-decoration:none;">{handle}</a></div>')
     return f"""
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0;border-collapse:collapse;">
   <tr>
@@ -95,6 +129,7 @@ def _signature(name: str, company: str, site: str, tagline: str) -> str:
         <span style="color:{MUTE};">&nbsp;&middot;&nbsp;</span>
         <a href="https://{site_esc}" style="color:{ACCENT};text-decoration:none;">{site_esc}</a>
       </div>
+      {ig}
       {tag}
     </td>
   </tr>
@@ -126,11 +161,12 @@ def render_html(
     body_text: str,
     *,
     signoff_name: str = "David Geha",
-    company: str = "Automate",
-    site: str = "automatelb.com",
+    company: str = "OSG",
+    site: str = "osgdev.com",
     tagline: str = "We set up quiet AI assistants that take the repetitive inbox and scheduling work off your team.",
-    unsubscribe_email: str = "david@automatelb.com",
+    unsubscribe_email: str = "david@osgdev.com",
     address: str = "",
+    instagram: str = INSTAGRAM,
 ) -> str:
     """Wrap a plain-text outreach body in the professional Automate shell.
 
@@ -139,7 +175,7 @@ def render_html(
     styled component and strips a duplicate trailing one.
     """
     blocks = _body_blocks(body_text, site)
-    sig = _signature(signoff_name, company, site, tagline)
+    sig = _signature(signoff_name, company, site, tagline, instagram)
     foot = _footer(company, site, unsubscribe_email, address)
     preheader = ""  # body already leads with the hook; no marketing preheader.
 
@@ -186,6 +222,6 @@ if __name__ == "__main__":
         "calendar, then sends reminders. Not a chatbot. A quiet assistant that "
         "handles the repetitive part so your staff does not.\n\n"
         "Would Tuesday or Thursday afternoon work for a quick 15-minute call?\n\n"
-        "David Geha\nAutomate, automatelb.com"
+        "David Geha\nOSG, osgdev.com"
     )
     print(render_html(sample))

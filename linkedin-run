@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# One entry point for the LinkedIn channel, runnable from the repo root.
+#
+# Why this exists: the pipeline lives in project/, the send side lives in
+# project/linkedin/, and the fire needs the venv on PATH (resolve_domains.py
+# lazy-imports `ddgs`, which system python3 does not have — it would silently
+# fall back to the deprecated duckduckgo_search). Getting that wrong is the
+# difference between a clean fire and a mid-run abort, so it is encoded here
+# once instead of being retyped.
+#
+#   ./linkedin-run fire [campaign] [extra run_fire args]   queue weeks of invites
+#   ./linkedin-run plan [campaign]                         trace stages, consume nothing
+#   ./linkedin-run send                                    invites + sweep + DMs (LIVE)
+#   ./linkedin-run dry                                     same, sends nothing
+#   ./linkedin-run status                                  backlog / limits / breakers
+#   ./linkedin-run chrome                                  open the LinkedIn Chrome
+#
+# Default campaign is gcc-outreach-li (the only linkedin-channel fixture).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT="$ROOT/project"
+LI="$PROJECT/linkedin"
+CAMPAIGN_DEFAULT="gcc-outreach-li"
+
+die() { echo "ABORT: $*" >&2; exit 1; }
+
+[ -d "$PROJECT" ] || die "no project/ under $ROOT"
+[ -d "$LI" ]      || die "no project/linkedin/ under $ROOT"
+
+# The fire shells out to bare `python3`; put the venv first so that resolves to
+# the interpreter that actually has crawl4ai + ddgs installed.
+activate_venv() {
+    local venv="$PROJECT/tools/venv/bin/activate"
+    [ -f "$venv" ] || die "missing venv at $venv (run tools/install.sh)"
+    # shellcheck disable=SC1090
+    source "$venv"
+}
+
+chrome_up() { nc -z 127.0.0.1 9222 2>/dev/null; }
+
+ensure_chrome() {
+    if chrome_up; then
+        echo "Chrome already on :9222 — reusing it."
+    else
+        echo "Starting the LinkedIn Chrome…"
+        bash "$LI/scripts/start_chrome.sh"
+        chrome_up || die "Chrome did not come up on :9222. Log in once, then retry."
+    fi
+}
+
+cmd="${1:-help}"; shift || true
+
+case "$cmd" in
+  fire)
+    campaign="${1:-$CAMPAIGN_DEFAULT}"; shift || true
+    ensure_chrome                       # run_fire.py preflights the browser first
+    activate_venv
+    cd "$PROJECT"
+    echo "Firing $campaign (LinkedIn: this QUEUES invites, it does not send)…"
+    exec bash tools/scripts/fire_campaign.sh "$campaign" "$@"
+    ;;
+  plan)
+    campaign="${1:-$CAMPAIGN_DEFAULT}"; shift || true
+    activate_venv                       # --plan never reaches a browser
+    cd "$PROJECT"
+    exec bash tools/scripts/fire_campaign.sh "$campaign" --plan "$@"
+    ;;
+  send)
+    ensure_chrome
+    cd "$LI"
+    exec bash scripts/daily.sh --live
+    ;;
+  dry)
+    ensure_chrome
+    cd "$LI"
+    exec bash scripts/daily.sh
+    ;;
+  status)
+    cd "$LI"
+    echo "=== account ==="
+    cat config/account.json 2>/dev/null || echo "(none — run: node scripts/whoami.js --save)"
+    echo
+    echo "=== invite backlog ==="
+    if [ -f state/backlog.json ]; then
+        python3 -c "import json;d=json.load(open('state/backlog.json'));e=d.get('entries',d) if isinstance(d,dict) else d;print(f'  {len(e)} people queued')" 2>/dev/null \
+            || echo "  (backlog.json unreadable)"
+    else
+        echo "  EMPTY — no invite supply. Fire a campaign: ./linkedin-run fire"
+    fi
+    echo
+    echo "=== today's queue / dm-queue ==="
+    for f in state/queue.json state/dm-queue.json; do
+        [ -f "$f" ] && echo "  $f: $(python3 -c "import json;d=json.load(open('$f'));print(str(len(d.get('entries',[])))+' entries, date '+str(d.get('date')))" 2>/dev/null)" \
+                    || echo "  $f: absent"
+    done
+    echo
+    echo "=== limits ==="
+    python3 -c "
+import json
+d = json.load(open('config/limits.json'))
+ramp = '/'.join(str(s['invitesPerDay']) for s in d['ramp'])
+dmramp = '/'.join(str(s['dmsPerDay']) for s in d['dmRamp'])
+print(f\"  invites: ramp {ramp}/day, daily max {d['absoluteDailyMax']}, weekly {d['weeklyMax']}\")
+print(f\"  DMs:     ramp {dmramp}/day, daily max {d['followUpDmsPerDay']}, weekly {d['dmWeeklyMax']}\")
+print(f\"  window:  {d['sendWindow']['start']}-{d['sendWindow']['end']} {','.join(d['sendDays'])} ({d['timezone']})\")
+print(f\"  halts:   acceptance <{d['acceptanceFloorPct']}% over {d['acceptanceFloorSampleSize']}, >{d['maxOutstandingInvites']} pending; withdraw after {d['withdrawPendingAfterDays']}d\")
+" 2>/dev/null || echo "  (limits.json unreadable)"
+    echo
+    echo "=== last 5 alerts (breakers) ==="
+    tail -5 state/alerts.log 2>/dev/null || echo "  (no alerts)"
+    echo
+    echo "=== items awaiting a human ==="
+    [ -f state/review-required.json ] && wc -l < state/review-required.json | tr -d ' ' | xargs -I{} echo "  {} line(s) in review-required.json" || echo "  none"
+    echo
+    echo "=== chrome ==="
+    chrome_up && echo "  :9222 OPEN" || echo "  :9222 closed (./linkedin-run chrome)"
+    ;;
+  chrome)
+    exec bash "$LI/scripts/start_chrome.sh"
+    ;;
+  test)
+    cd "$LI"
+    exec npm test
+    ;;
+  help|*)
+    sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    ;;
+esac

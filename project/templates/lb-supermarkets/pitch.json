@@ -1,0 +1,13 @@
+{
+  "_comment": "Lebanon supermarket/food-retail pitch. User's exact fixed copy, no signal variation. Salutation slot + [Company] -> {name} are the only changes from the source text. No em-dashes. Renders through email_template.py at send.",
+  "country_names": {
+    "LB": "Lebanon"
+  },
+  "vertical_names": {
+    "grocery": "supermarket chains"
+  },
+  "default_vertical": "supermarket chains",
+  "subject_template": "The ordering guesswork at {name}",
+  "body_template": "Hi {salutation},\n\nHope the season's treating you well. I've spent time studying how supermarket chains run here, and I've noticed something that repeats almost everywhere: the weekly order still depends on each branch manager's gut. So one branch throws away fresh produce the same week another apologizes for an empty shelf, and with import delays and two currencies, even the best managers can't guess right every time.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG (https://osgdev.com). We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you have 20 minutes for a call so we can go through the details? If a call is easier, I'm on +961 76 412 978.\n\nBest,\nDavid Geha\nOSG\nhttps://osgdev.com\nInstagram: dave.automates",
+  "wa_body_template": "Hello {salutation},\n\nI've spent time studying how supermarket chains run here: the weekly order still depends on each branch manager's gut, so one branch throws away fresh produce the same week another apologizes for an empty shelf.\n\nI'm David Geha, a third year Engineering student at AUB, and I work with OSG. We're AI consultants: we find where a business is losing time and money and build AI systems around those exact gaps. We've done this for marketing agencies, F&B businesses and oil and gas companies across Lebanon and the GCC.\n\nWould you be open to a 20 minute call to go through the details?\n\nDavid Geha, OSG\nhttps://osgdev.com\nInstagram: dave.automates"
+}

@@ -48,6 +48,14 @@ SiteFreemail        gmail/yahoo seen on the site
 SitePhoneLinks      wa.me/DIGITS and tel: links harvested from the site's own HTML
 EnrichPhone         yes | no — resolve a mobile/WhatsApp number? DEFAULT no (if the
                     line is missing). Run step 3 ONLY when this is `yes`.
+TargetRoles         optional — this campaign's priority job titles (e.g. "Head of
+                    Compliance, MLRO, COO" for a bank/fintech run, "Grants Manager,
+                    MEAL Manager, Country Director" for an NGO run). When present,
+                    it is MORE authoritative than the generic founder/CEO/owner/GM
+                    ladder in step 1 for THIS business — search for these titles
+                    first (`<Business> "<role1>" OR "<role2>" <Country-name>`), and
+                    only fall back to founder/CEO/owner/GM if none of the listed
+                    roles turn up a named person. Absent line = unchanged default.
 OutputFile          absolute path for your JSON result
 SitePages           readable text from the about/team/contact pages ALREADY scraped
 ```
@@ -56,13 +64,18 @@ handed to you precisely so you do NOT re-fetch the web. Only WebSearch / WebFetc
 for what they do not already contain.
 
 ## Workflow
-1. **Find the person.** Read `SitePages` first for a named senior decision-maker
-   (founder > CEO > MD > owner > GM). If not there, WebSearch
-   `<Business> founder OR CEO OR owner OR managing director <Country-name>`
+1. **Find the person.** If the input has a `TargetRoles` line, that ladder replaces
+   the default one below for THIS business — read `SitePages` for one of those
+   named titles, else WebSearch `<Business> "<role1>" OR "<role2>" <Country-name>`
+   before trying founder/CEO/owner/GM. Otherwise: Read `SitePages` first for a
+   named senior decision-maker (founder > CEO > MD > owner > GM). If not there,
+   WebSearch `<Business> founder OR CEO OR owner OR managing director <Country-name>`
    (use full country names, e.g. "United States", "UAE", "Saudi Arabia" — not
    ISO codes). Only if still thin, WebFetch `<Website>/about`, `/team`,
    `/leadership`. Lock in name + gender; don't drop a confirmed person just
-   because the email is hard.
+   because the email is hard. **Work the surname just as hard as the email** —
+   try `"<First>" <Business> surname OR last name`, LinkedIn, business
+   registries — before accepting first-name-only (see step 2d).
 
 2. **Establish their direct email** (mandatory for `found:true`). Work
    top-to-bottom, stop at the first hit:
@@ -86,7 +99,23 @@ for what they do not already contain.
      (`reconstructed_from_mask`, medium); if it fits multiple formats →
      `found:false` (a bounce is worse than a miss). A generic `info@` is NOT
      format evidence. No format evidence at all → `found:false`.
+   - **2d. One-name fallback.** If you have worked the full-name search in
+     step 1 and genuinely cannot complete it, but you DO have a verified direct
+     email (verbatim or evidence-reconstructed per 2a-2c) that confirms ONE
+     name component, that component alone is enough for `found:true`:
+     * **First name only** (e.g. `dave@domain`): set `first_name`, `last_name:""`.
+       Assign `title` if gender is clear from the name/pronouns/photos; if
+       genuinely ambiguous set `title:""` — the drafters will open
+       `Hello <First>,` which needs no Mr./Mrs.
+     * **Surname only** (e.g. `smith@domain` with "Mr. Smith" style evidence):
+       set `last_name`, `first_name:""`. `title` (Mr./Mrs.) is REQUIRED here —
+       the salutation will be `Hello Mr./Mrs. <Surname>,`. Gender unassignable →
+       `found:false` for this form.
+     This is a fallback for an exhausted full-name search, not a shortcut —
+     always try the full name first. A name with NO verified direct email is
+     unchanged: `found:false`.
 
+<!-- OPTIONAL:phone -->
 3. **Mobile / WhatsApp.** *(SKIP this entire step unless the input contains
    `EnrichPhone: yes`. When the flag is absent or `no`, do not run a single phone
    search — set `phone: ""` and go straight to step 4.)* Work the ladder below in
@@ -125,6 +154,7 @@ for what they do not already contain.
      empty, WebSearch `"<First Last>" whatsapp <Country-name>`.
 
    If all six steps return nothing, set `phone: ""`.
+<!-- /OPTIONAL:phone -->
 
 4. **Gender** (`Mr.` / `Mrs.`) from titles, pronouns, photos, or the first name.
 
@@ -132,6 +162,7 @@ for what they do not already contain.
 
 6. Reply: `Done: lead=<LeadId> name=<First Last> title=<Mr.|Mrs.> email=<addr> basis=<basis> phone=<digits-or-empty> confidence=<high|medium|low>` (or `Done: lead=<LeadId> not_found`).
 
+<!-- OPTIONAL:phone -->
 ### Country mobile rules (must pass ALL checks)
 - **Lebanon (+961)**: mobile prefixes `3` (10 digits, `9613123456`), `70/71/76/78/79/81` (11 digits, `96176412978`). Reject landlines `961 1/4/5/6/9`.
 - **UAE (+971)**: mobile `9715` + 8 digits = 12 total. Reject `9712/3/4/6/7/9`.
@@ -140,6 +171,7 @@ for what they do not already contain.
 - **Bahrain (+973)**: mobile `973` + `3` + 7 digits = 11. Reject `973 1`.
 - **Kuwait (+965)**: mobile `965` + `5/6/9` + 7 digits = 11. Reject `965 2`.
 - **US/UK/CA/AU/elsewhere**: capture a clearly-personal mobile if visible; if only a switchboard/landline exists, leave `phone` empty.
+<!-- /OPTIONAL:phone -->
 
 ## What counts as a direct email
 ✅ `firstname.lastname@` / `firstname@` / `f.lastname@` / `firstinitial.lastname@`
@@ -160,21 +192,25 @@ observed format evidence.
 ## Output schema (one JSON object, no markdown, single trailing newline)
 **Success (verbatim):**
 ```json
-{"lead_id":"web-thewarehousegym-com","found":true,"first_name":"Ahmed","last_name":"Al Sayed","title":"Mr.","role":"Founder & CEO","email":"ahmed.alsayed@thewarehousegym.com","email_basis":"verbatim","phone":"+971501234567","source_url":"https://thewarehousegym.com/about","email_source_url":"https://www.linkedin.com/in/ahmed-alsayed-twg/","phone_source_url":"https://thewarehousegym.com/about","confidence":"high"}
+{"lead_id":"web-northgatefitness-com","found":true,"first_name":"Ahmed","last_name":"Al Sayed","title":"Mr.","role":"Founder & CEO","email":"ahmed.alsayed@northgatefitness.com","email_basis":"verbatim","phone":"+971501234567","source_url":"https://northgatefitness.com/about","email_source_url":"https://www.linkedin.com/in/ahmed-alsayed-ngf/","phone_source_url":"https://northgatefitness.com/about","confidence":"high"}
 ```
 **Success (reconstructed):**
 ```json
-{"lead_id":"web-dentakay-com","found":true,"first_name":"Onur","last_name":"Akay","title":"Mr.","role":"Founder & CEO","email":"onur@dentakay.com","email_basis":"reconstructed_from_mask","phone":"","source_url":"https://dentakay.com/about","email_source_url":"https://rocketreach.co/onur-akay-email","email_evidence_note":"masked o**@dentakay.com confirms firstname format","phone_source_url":"","confidence":"medium"}
+{"lead_id":"web-akaydental-com","found":true,"first_name":"Onur","last_name":"Akay","title":"Mr.","role":"Founder & CEO","email":"onur@akaydental.com","email_basis":"reconstructed_from_mask","phone":"","source_url":"https://akaydental.com/about","email_source_url":"https://rocketreach.co/onur-akay-email","email_evidence_note":"masked o**@akaydental.com confirms firstname format","phone_source_url":"","confidence":"medium"}
+```
+**Success (one-name fallback, step 2d — first name from the email):**
+```json
+{"lead_id":"web-southportplumbers-com-au","found":true,"first_name":"Dave","last_name":"","title":"Mr.","role":"Owner","email":"dave@southportplumbers.com.au","email_basis":"verbatim","phone":"","source_url":"https://southportplumbers.com.au/contact","email_source_url":"https://southportplumbers.com.au/contact","confidence":"medium","reason":"surname not found after ABR/LinkedIn/web search; first name confirmed by verbatim personal email"}
 ```
 **Not found:**
 ```json
-{"lead_id":"web-thewarehousegym-com","found":false,"reason":"name found (Ahmed Al Sayed) but no direct email and no observable email format — only generic info@ available"}
+{"lead_id":"web-northgatefitness-com","found":false,"reason":"name found (Ahmed Al Sayed) but no direct email and no observable email format — only generic info@ available"}
 ```
 
 Field rules:
 - `lead_id` — echo exactly as given.
-- `first_name`, `last_name` — properly capitalized (`Al Sayed`, `O'Connor`, `McDonald`); particles `al/el/bin/de/van` stay lowercase.
-- `title` — exactly `Mr.` or `Mrs.` (with period). No `Ms.`/`Dr.`/`Eng.`
+- `first_name`, `last_name` — properly capitalized (`Al Sayed`, `O'Connor`, `McDonald`); particles `al/el/bin/de/van` stay lowercase. EXACTLY ONE may be `""` under the step 2d fallback (verified direct email confirms the other component).
+- `title` — exactly `Mr.` or `Mrs.` (with period). No `Ms.`/`Dr.`/`Eng.` May be `""` ONLY in the 2d first-name-only case with genuinely ambiguous gender; REQUIRED whenever `last_name` is set.
 - `role` — AS WRITTEN on the cited source; never invent or inflate (page says "General Manager" → write that, not "Managing Partner"). Must be traceable to `source_url`.
 - `email` — the decision-maker's direct address, lowercase, not a generic mailbox.
 - `email_basis` — `verbatim` | `reconstructed_from_mask` | `pattern_inferred`. REQUIRED on `found:true`.
@@ -183,23 +219,27 @@ Field rules:
 - `confidence` — `high` (verbatim, credible source), `medium` (verbatim snippet OR evidence-based reconstruction). Do not ship `low` — use `found:false`.
 
 ## Inclusion — `found:true` requires ALL
-Full first + last name in a credible source; person is plausibly the
-decision-maker (founder/owner/CEO/MD/GM/head); Mr./Mrs. assignable with
-confidence; a direct email tied to this person (verbatim OR
-evidence-reconstructed), evidence cited.
+Full first + last name in a credible source (OR one name component, per the 2d
+fallback, when a verified direct email confirms it and the full-name search
+was genuinely exhausted); person is plausibly the decision-maker (founder/
+owner/CEO/MD/GM/head); Mr./Mrs. assignable with confidence whenever a surname
+is set (first-name-only may leave `title:""` if gender is ambiguous); a direct
+email tied to this person (verbatim OR evidence-reconstructed), evidence cited.
 
 ## Exclusion — `found:false`
-First name only (no surname); only a generic title with no named person; named
-person is junior/PR not a decision-maker; gender-ambiguous with no signal; no
-direct email surfaced AND no personal-email format observable to reconstruct from
-(generic mailboxes are not a fallback; a no-evidence guess is forbidden).
+A partial name with NO verified direct email (the 2d fallback requires the
+email, not just a name); only a generic title with no named person; named
+person is junior/PR not a decision-maker; surname-only with unassignable
+gender; no direct email surfaced AND no personal-email format observable to
+reconstruct from (generic mailboxes are not a fallback; a no-evidence guess is
+forbidden).
 
 ## Anti-patterns
 - **Zero-evidence email guessing** — building `firstname@domain` with no observed
   format (no mask, no same-company example) is forbidden; it bounces. No evidence → `found:false`.
 - **Reconstructing from a generic mailbox** — `info@` confirms the domain, not the personal-name format.
 - **Business name as `last_name`** — "Ferrari Dental Clinic" does not make the owner "Ferrari" unless a real human is named so. If every source only repeats the brand and you find no distinct human first+last → `found:false`. Same for family-brand names (Bin Hamoodah, Al Tayer, Khoury): set as surname only if a source names `<First> <BrandFamily>` in that exact form.
-- **Guessing gender** from an unknown first name → `found:false`.
+- **Guessing gender** from an unknown first name — set `title:""` (first-name-only fallback) rather than guessing; surname-only with no gender signal → `found:false`.
 - **Inventing/inflating the role**, picking a junior name over the founder, omitting `email_basis`, or wrapping the JSON in markdown / returning multiple objects.
 
 ## You do not

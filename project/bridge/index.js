@@ -11,6 +11,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_DIR = join(__dirname, '..');
 const SESSION_FILE = join(__dirname, '.sessions.json');
 
+// OFF BY DEFAULT (user directive 2026-07-27: "it should only be used during the
+// runs"). This file is the INTERACTIVE chat bridge: it auto-replies to incoming
+// WhatsApp DMs by spawning Claude. That autonomous answering is not wanted, and
+// while it runs it also holds the WhatsApp profile lock, which blocks campaign
+// sends (send_campaign.js) entirely. Campaign outreach does NOT need this file.
+// To start it deliberately: WHATSAPP_CHAT_BRIDGE=1 node bridge/index.js
+if (process.env.WHATSAPP_CHAT_BRIDGE !== '1') {
+  console.error(
+    'Refusing to start: the interactive WhatsApp chat bridge is disabled.\n' +
+      '  It auto-replies to your DMs and locks the WhatsApp profile, which blocks\n' +
+      '  campaign sends. Campaign outreach does not need it.\n' +
+      '  To start anyway: WHATSAPP_CHAT_BRIDGE=1 node bridge/index.js'
+  );
+  process.exit(3);
+}
+
 const ALLOWED = (process.env.WHATSAPP_ALLOWED_NUMBERS || '')
   .split(',')
   .map((s) => s.trim().replace(/\D/g, ''))

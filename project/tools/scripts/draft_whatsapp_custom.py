@@ -11,7 +11,8 @@ built on the specific manual workflow gap it finds. Two phases:
          wa-batch-NNN.txt per kept lead + a wa-out-NNN.json OutputFile path.
 
   merge  reads all wa-out-*.json, joins to leads-with-contact.json, enforces the
-         contract (Mr./Mrs.+surname salutation, no money words, no em/en dashes,
+         contract (personal salutation: Mr./Mrs.+surname, or bare first name
+         when no surname was resolvable; no money words, no em/en dashes,
          NO automatelb.com / NO "Automate", valid mobile, cross-run dedup), and
          writes whatsapp-drafted.json (the bridge/send_campaign.js input). Halts
          (exit 5) if zero drafts survive.
@@ -33,7 +34,7 @@ WITH_CONTACT = ROOT / "leads-with-contact.json"
 RAW = ROOT / "raw_html"
 OUT = ROOT / "whatsapp-drafted.json"
 RUN_SLUG = ROOT.name
-SENT_LOG = Path(args.sent_log) if args.sent_log else ROOT.parents[2] / "vault" / "lead-outreach" / "sent-log.md"
+SENT_LOG = Path(args.sent_log) if args.sent_log else ROOT.parents[1] / "vault" / "lead-outreach" / "sent-log.md"
 
 PAGE_PRIORITY = ["home", "index", "about", "aboutus", "contact", "contactus",
                  "services", "team", "people"]
@@ -48,11 +49,31 @@ MONEY_RE = re.compile(
     r"\$|\b(price|pricing|priced|fee|fees|retainer|commission|monthly fee|"
     r"per month|/month|cost|costs|free|charge|charges|dollar|dollars|usd|"
     r"invoice|subscription)\b", re.IGNORECASE)
-BRAND_RE = re.compile(r"automate|automatelb\.com", re.IGNORECASE)
+BRAND_RE = re.compile(r"automate|automatelb\.com|\bosg\b|osg-site|osgdev\.com", re.IGNORECASE)
+
+# The personal Instagram handle ships in every outreach signature. It contains
+# the substring "automate", so it is stripped out before the brand gate runs,
+# otherwise every message would be dropped as a brand mention.
+INSTAGRAM_LINE = "Instagram: dave.automates"
+INSTAGRAM_RE = re.compile(r"\n?[Ii]nstagram\s*[:@]?\s*@?dave\.automates")
+
+
+def with_instagram(body: str) -> str:
+    body = body.rstrip()
+    return body if INSTAGRAM_RE.search(body) else f"{body}\n{INSTAGRAM_LINE}"
 
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _WA_PHONE_RE = re.compile(r"wa:(\d{6,15})")
 _SLUG_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def salutation_of(lead: dict) -> str:
+    """`Mr./Mrs. <Surname>` when surname + gender exist, else the first name
+    (one confirmed name component is enough, per the CLAUDE.md contract)."""
+    last = lead.get("contact_last_name", "").strip()
+    title = lead.get("contact_title", "").strip()
+    first = lead.get("contact_first_name", "").strip()
+    return f"{title} {last}" if (last and title in {"Mr.", "Mrs."}) else first
 
 
 def normalize_phone(raw: str, cc_key: str) -> str:
@@ -137,7 +158,9 @@ def phase_prep() -> None:
         first = lead.get("contact_first_name", "").strip()
         last = lead.get("contact_last_name", "").strip()
         phone = normalize_phone(lead.get("contact_phone", ""), lead.get("country_code", ""))
-        if not (first and last and title in {"Mr.", "Mrs."} and phone):
+        # One name component is enough (per CLAUDE.md salutation contract).
+        name_ok = (last and title in {"Mr.", "Mrs."}) or first
+        if not (name_ok and phone):
             dropped_no_mobile += 1
             continue
         kept += 1
@@ -152,6 +175,7 @@ def phase_prep() -> None:
             f"Vertical: {lead.get('vertical','')}\n"
             f"Website: {lead['website']}\n"
             f"Contact: {title} {last}  (first={first} last={last})\n"
+            f"Salutation: Hello {salutation_of(lead)},\n"
             f"HtmlFiles:\n{html_block}\n"
             f"OutputFile: {out_path}\n"
         )
@@ -192,15 +216,18 @@ def phase_merge() -> None:
         last = lead.get("contact_last_name", "").strip()
         title = lead.get("contact_title", "").strip()
         first_line = body.split("\n", 1)[0]
-        if not first_line.startswith(f"Hello {title} ") or last not in first_line:
+        if not first_line.startswith(f"Hello {salutation_of(lead)},"):
             d_salu += 1
             continue
         if MONEY_RE.search(body):
             d_money += 1
             continue
-        if BRAND_RE.search(body):
+        # Brand gate runs on the copy minus the Instagram handle, then the
+        # handle is appended to the signature.
+        if BRAND_RE.search(INSTAGRAM_RE.sub("", body)):
             d_brand += 1
             continue
+        body = with_instagram(body)
 
         email = (lead.get("to_email") or lead.get("contact_email") or "").strip().lower()
         domain = _root_domain(lead.get("website") or email)
@@ -219,7 +246,7 @@ def phase_merge() -> None:
             "contact_email": email,
             "website": lead.get("website", ""),
             "to_name": f"{lead.get('contact_first_name','')} {last}".strip(),
-            "salutation": f"{title} {last}",
+            "salutation": salutation_of(lead),
             "contact_first_name": lead.get("contact_first_name", ""),
             "contact_last_name": last,
             "contact_title": title,

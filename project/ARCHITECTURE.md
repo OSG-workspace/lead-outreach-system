@@ -2,7 +2,7 @@
 
 **This is the single source of truth for "what runs, where the files are, and which agents deploy with which tools." Read this first on any trigger.** PIPELINE.md is the long-form stage contract; `.claude/commands/fire.md` is the executable playbook; this file is the map that ties them together.
 
-> **One line:** a fire trigger → bootstrap a dated run folder → fan out N Haiku `source-agent`s (1 per query) → merge+dedup → fetch HTML → extract+score → **qualify+cap** → **enrich decision-maker (name-finder fan-out)** → draft → Brevo batch send → persist. Email-only by default; WhatsApp is opt-in. Halts on any fallback. 5–12 min end to end.
+> **One line:** a fire trigger → bootstrap a dated run folder → deterministic OSM/Places enumeration (0 agents, 0 tokens) → merge+dedup → fetch HTML → extract+score → **qualify+cap** → **enrich decision-maker (name-finder fan-out)** → draft → Brevo batch send → persist. Email-only by default; WhatsApp is opt-in. Halts on any fallback. 5–12 min end to end.
 
 ---
 
@@ -29,16 +29,11 @@ Both run the **identical** Haiku sub-agents (same definitions/tools/model) and t
 ## 1. File map (✅ live · 🗄️ legacy/reference)
 
 ```
-<home>/Desktop/lead-outreach-system/            ← SESSION cwd (Claude Code loads .claude from here)
+<home>/lead-outreach-system/            ← SESSION cwd (Claude Code loads .claude from here)
 │
 ├── .claude/
 │   ├── settings.json                                     ✅ authoritative permissions (orchestrator + ALL sub-agents)
 │   └── agents/                                            ✅ ALL sub-agent definitions live HERE (cwd level)
-│       ├── source-agent.md            ✅ GCC consumer-chains (default)
-│       ├── source-agent-lb.md         ✅ Lebanon AI-receptionist SMBs
-│       ├── source-agent-lb-enterprise.md ✅ biggest Lebanese companies (WhatsApp consult)
-│       ├── source-agent-us.md         ✅ US service businesses (4 verticals)
-│       ├── source-agent-worldwide.md  ✅ worldwide receptionist (used by EU-hotels)
 │       ├── name-finder.md             ✅ decision-maker enrichment (Stage 5.5)
 │       ├── lead-writer.md             ✅ combined find+write (custom email-only path)
 │       ├── gap-writer.md              ✅ custom email writer (custom + WhatsApp path)
@@ -56,7 +51,7 @@ Both run the **identical** Haiku sub-agents (same definitions/tools/model) and t
     │   ├── agents/personalizer.md                         🗄️ reviewed-mode personalizer (NOT used by /fire)
     │   └── settings.json                                  🗄️ NOT loaded (only cwd-level settings.json is)
     │
-    ├── agents/{run-kickoff,run-auto,source-agent}.md      🗄️ human-readable reference only — NOT loaded as sub-agents
+    ├── agents/{run-kickoff,run-auto}.md                   🗄️ human-readable reference only — NOT loaded as sub-agents
     │
     ├── tools/scripts/
     │   ├── run_fire.py                                    ✅ DETERMINISTIC orchestrator (no AI brain) — runs the whole pipeline
@@ -83,15 +78,16 @@ Both run the **identical** Haiku sub-agents (same definitions/tools/model) and t
 
 ## 2. Agent roster — who deploys, with which tools, how many
 
-Sub-agents: sourcing + name-finder are **Haiku** (high-volume lookup work); the three writers (`lead-writer`, `gap-writer`, `wa-writer`) are **Sonnet** (low-volume, copy-quality-critical). All dispatched **foreground**, **≤50 Agent calls per assistant message** (never `run_in_background` — that re-reads the orchestrator context per completion and burns the usage limit).
+Sub-agents: name-finder is **Haiku** (high-volume lookup work); the three writers (`lead-writer`, `gap-writer`, `wa-writer`) are **Sonnet** (low-volume, copy-quality-critical). All dispatched **foreground**, **≤50 Agent calls per assistant message** (never `run_in_background` — that re-reads the orchestrator context per completion and burns the usage limit).
 
 | Agent | Tools (exact) | Stage | Deployed when | How many |
 |---|---|---|---|---|
-| `source-agent` (+ `-lb`, `-lb-enterprise`, `-us`, `-worldwide`) | **WebSearch, Write** | 2 | every run — exactly one variant, set by `<run>/source_agent.txt` | **1 per query** (≈40–130) |
 | `name-finder` | **Read, WebSearch, WebFetch, Write** | 5.5 | every run **except** the combined custom email-only path | **1 per qualified lead** (≤ cap) |
 | `lead-writer` | **Read, Write, WebSearch, WebFetch** | 5.5+6 (combined) | `draft_mode=custom` **and email-only** (US gap verticals) — replaces name-finder+gap-writer | **1 per qualified lead** |
 | `gap-writer` | **Read, Write, WebSearch, WebFetch** | 6 | `draft_mode=custom` **and** run also uses WhatsApp | **1 per qualified lead** |
 | `wa-writer` | **Read, Write, WebSearch, WebFetch** | 8.5 | WhatsApp channel + custom WA mode | **1 per company w/ a CEO mobile** |
+| `li-finder` | **Read, WebSearch, WebFetch, Write** | 8.6b | LinkedIn channel, for companies whose LinkedIn **company page yielded no person** | **1 per uncovered company** (≤ cap 120) |
+| `li-writer` | **Read, Write** | 8.6 | LinkedIn channel | **1 per qualified person** |
 | `personalizer` | Read, Write | — | 🗄️ reviewed-mode only — **not used by `/fire`** | n/a |
 
 **Tool-lockdown is deliberate.** Source agents have *only* WebSearch+Write so they physically cannot fall back to Bash/ddgs/crawl4ai. Writer + name-finder agents add Read so they load their own input/scraped pages **from disk** — the orchestrator dispatches a file PATH, never inlined page text, so per-lead content never bloats the orchestrator context (the big Stage-5.5 token saving).
@@ -105,7 +101,7 @@ Sub-agents: sourcing + name-finder are **Haiku** (high-volume lookup work); the 
 | # | Stage | Owner | Output | Halt if |
 |---|---|---|---|---|
 | 1 | Bootstrap | orchestrator (CLAUDE.md router → fire.md) | `runs/<slug>/` with control files | template missing |
-| 2 | Source | **N × source-agent** (1/query) | `candidates-batch-*.txt` | agents can't WebSearch |
+| 2 | Source | ONE stage, deterministic enumeration from `sourcing.json`: `map` → `source_overpass.py` (OSM) · `places` → `source_places.py`. **Zero agents, zero tokens.** | `candidates-batch-*.txt` | all Overpass mirrors fail |
 | 3 | Merge+dedup | `merge_candidates.py` | `candidates-all.txt` | <50 merged |
 | 4 | Fetch HTML | `fetch_html.sh` (crawl4ai, multi-page) | `raw_html/{domain}__{slug}.html` | <40% domains yielded a page |
 | 5 | Extract+score | `extract_leads.py` | `leads-extracted.json` | 0 extracted |
@@ -115,21 +111,36 @@ Sub-agents: sourcing + name-finder are **Haiku** (high-volume lookup work); the 
 | 7 | Send | `send_batch_brevo.py --send` | `emails-sent.jsonl` | any Brevo 4xx/5xx |
 | 8 | Persist | `persist_sent_log.py` | appends `vault/.../sent-log.md` | n/a |
 | 8.5 | WhatsApp (opt-in) | **wa-writer** (1/company) → `draft_whatsapp_custom.py` → `send_campaign.js` | `whatsapp-sent.jsonl` | 0 drafts / send fails |
+| 8.6 | LinkedIn (opt-in) | `draft_linkedin.py --prep` → `walk_companies.js` (company page → people) | `people-raw.json` | challenge / selector miss |
+| 8.6b | LinkedIn **profile find** | `resolve_li_profiles.py --prep` → **li-finder** (1/uncovered company) → `--merge` → `walk_companies.js --profiles` | merged into `people-raw.json` | none — a company with no findable owner is simply skipped |
+| 8.6c | LinkedIn gates + copy | `qualify_people.py` (owners/CEOs, alive, reachable, geo) → **li-writer** (1/person) → `linkedin_queue.py` | `linkedin-leads.json` + `linkedin/state/backlog.json` | 0 people qualified |
+| 8.6d | LinkedIn **queue, not send** | `queue/generate.js` (invites, note-less) · `queue/generate-dm.js` (already-reachable) | `state/queue.json`, `state/dm-queue.json` | near-duplicate messages |
 
-**Run control files** (in `runs/<slug>/`, cloned from the template on bootstrap): `icp.yaml`, `queries.txt`, `source_agent.txt`, `draft_mode.txt` (template\|custom), `channels.json` (`["email"]` and/or `"whatsapp"`), `countries.txt`, `qualify.json` (per-run gate, e.g. hotel size/volume), `pitch.json` (fixed-copy campaigns).
+> **LinkedIn does not send during a fire.** It queues weeks of invite supply; `sender.js`,
+> `sweep_acceptance.js` and `messenger.js` drip it out daily (8–18 invites/day, 90/week).
+> A fire that "sends 0 on LinkedIn" is working correctly — see `linkedin/README.md`.
+
+**Run control files** (in `runs/<slug>/`, cloned from the template on bootstrap — see `templates/README.md` for THE general fixture structure; a new campaign is only a new folder): `icp.yaml` (required), **`sourcing.json`** (required — the single Stage-2 contract: `{"method":"map","selector":"\"office\"=\"lawyer\"","vertical":"law","max_per_run":350}`), `draft_mode.txt` (template\|custom), `channels.json` (`["email"]` and/or `"whatsapp"`), `countries.txt`, `qualify.json` (per-run gate, e.g. hotel size/volume), `pitch.json` (fixed-copy campaigns), optional `places.txt` `City|ISO2|lat|lon|half_width` (map method; default: built-in 195-city EU table). Map method walks the ledger `vault/lead-outreach/overpass-cities-fired.txt`, keyed `vertical|city`, so consecutive fires cover fresh cities region by region and different verticals never block each other (validated 2026-07-17: Chicago law-firms sweep, 44 usable candidates, zero code changes).
 
 ---
 
 ## 4. Routing — phrase → target (summary; CLAUDE.md is authoritative)
 
-| Phrase names… | Source agent | Slug base |
-|---|---|---|
-| US + law/staffing/clinics/property | `source-agent-us` | `us-<vertical>` |
-| "gcc" / "consumer chains" | `source-agent` | `gcc-auto` |
-| "lebanese run" / biggest LB companies | `source-agent-lb-enterprise` | `lb-enterprise` |
-| "lb receptionist" | `source-agent-lb` | `lb-receptionist` |
-| "worldwide" | `source-agent-worldwide` | `worldwide-receptionist` |
-| explicit slug (e.g. `2026-06-23-eu-hotels`) | per that folder's `source_agent.txt` | — |
+| Phrase names… | Slug base |
+|---|---|
+| US + law/staffing/clinics/property | `us-<vertical>` |
+| "gcc" / "consumer chains" | `gcc-auto` |
+| "lebanese run" / biggest LB companies | `lb-enterprise` |
+| "lb receptionist" | `lb-receptionist` |
+| "worldwide" | `worldwide-receptionist` |
+| Lebanon fintech/AML/bank-compliance | `lb-fintech-compliance` |
+| Lebanon supermarkets/food retail | `lb-supermarkets` |
+| Lebanon insurers/TPA/hospitals | `lb-insurance-tpa` |
+| Lebanon FMCG distributors/industrial | `lb-fmcg-distributors` |
+| Lebanon construction/engineering | `lb-construction` |
+| Lebanon restaurants/hotels/beach clubs | `lb-restaurants-hotels` |
+| Lebanon NGOs/international orgs | `lb-ngos` |
+| explicit slug (e.g. `2026-06-23-eu-hotels`) | — |
 
 - **Every fire = a COMPLETELY NEW dated run folder, launched immediately via `run_fire.py`. Act, don't analyze; never reuse/resume an existing folder.**
 - **Named target → fire at once, no questions.** **"US" with no vertical → ASK which of 4.** **Bare "fire run" → ASK which campaign** (no silent default). **Bare "lebanon" → ASK lb-enterprise vs lb-receptionist.** The routing question is the only permitted pause; after it, fire.
@@ -138,7 +149,7 @@ Sub-agents: sourcing + name-finder are **Haiku** (high-volume lookup work); the 
 
 ## 5. Scripts: LIVE vs legacy
 
-**ORCHESTRATORS:** `run_fire.py` (deterministic, runs everything below) + `agent_dispatch.py` (its headless dispatch engine). **LIVE stage scripts (in order):** `merge_candidates.py` · `fetch_html.sh` (→ `fetch_html.py`) · `extract_leads.py` · `qualify_leads.py` · `enrich_contact_person.py` · `draft_emails.py` / `draft_lead_custom.py` / `draft_custom.py` · `draft_whatsapp_custom.py` / `draft_whatsapp.py` (WA) · `sync_brevo_events.py` (bounce/block/spam suppression sync, runs before every live send) · `send_batch_brevo.py` · `persist_sent_log.py` · `gen_run_readme.py`. **Shared libs (imported):** `email_utils.py`, `email_template.py`.
+**ORCHESTRATORS:** `run_fire.py` (deterministic, runs everything below) + `agent_dispatch.py` (its headless dispatch engine). **LIVE stage scripts (in order):** `source_overpass.py` (Stage 2 map method — exhaustive OSM enumeration per city for any tag selector/vertical, region-by-region per-vertical city ledger, ZERO LLM tokens; selected by `sourcing.json` `"method":"map"`; validated 2026-07-17: 3 cities → 272 usable hotel candidates in ~30 s vs 108 merged from 141 Haiku agents on the DDG path, and 44 Chicago law firms with the same code) · `merge_candidates.py` · `fetch_html.sh` (→ `fetch_html.py`) · `extract_leads.py` · `qualify_leads.py` · `enrich_contact_person.py` · `draft_emails.py` / `draft_lead_custom.py` / `draft_custom.py` · `draft_whatsapp_custom.py` / `draft_whatsapp.py` (WA) · `sync_brevo_events.py` (bounce/block/spam suppression sync, runs before every live send) · `send_batch_brevo.py` · `persist_sent_log.py` · `gen_run_readme.py` · `new_campaign.py` (scaffolds a complete new-campaign fixture in one command — see templates/README.md "Creating a new campaign"). **Shared libs (imported):** `email_utils.py` (incl. the broad `COUNTRY_NAMES_ISO` map both drafters use), `email_template.py`.
 
 **🗄️ LEGACY (Maps/MailScout/funnel era — NOT called by `/fire`; do not use without checking):** `run_campaign.py`, `balanced_funnel.py`, `build_funnel_config.py`, `funnel_lib.py`, `run_funnel_dry_run.py`, `score_leads.py`, `draft_qualified.py`, `draft_from_pass.py`, `enrich_emails*.py`, `resolve_emails.py`, `extract_signals.py`, `qualify_signals.py`, `recover_signals.py`, `filter_maps_leads.py`, `source_directories.py`, `source_fit_filter.py`, `batch_leads.py`, `send.py`, `send_via_brevo.py`, `send_mockup.py`, `send_eligibility_gate.py`, `apply_claude_reviews.py`, `test-*`.
 
@@ -149,7 +160,8 @@ Sub-agents: sourcing + name-finder are **Haiku** (high-volume lookup work); the 
 | Rule | Value | Enforced in |
 |---|---|---|
 | Never re-contact a `sent-log.md` email | email-domain + `[[slug]]` + `dom@` tokens at merge; email-level at extract; **send-time suppression net** (sent-log + bounce-list) | `merge_candidates.py`, `extract_leads.py`, `send_batch_brevo.py` |
-| **Fresh leads only, every fire** | contacted domains blocked FOREVER (sent-log nets); sourced-but-never-contacted blocked for **90 days** (`SOURCED_SKIP_DAYS`, ledger: `vault/lead-outreach/sourced-log.txt`) then eligible for retry; `SOURCED_SKIP=off` disables; merge WARNs to rotate queries when >50% of candidates are stale | `merge_candidates.py` |
+| **Fresh leads only, every fire** | contacted domains blocked FOREVER (sent-log nets); sourced-but-never-contacted (incl. searched-and-rejected) ALSO blocked **forever** by default (user directive 2026-07-17; ledger: `vault/lead-outreach/sourced-log.txt`); `SOURCED_SKIP_DAYS=<n>` restores an n-day retry window, `SOURCED_SKIP=off` disables for one run; merge WARNs to rotate queries when >50% of candidates are stale. Map-method sourcing ALSO applies both nets at source time, so `--max-candidates` counts only never-seen domains — each fire enters fetch with a full fresh batch | `merge_candidates.py`, `source_overpass.py` |
+| **Per-run query scoping (search method)** | before Stage 2 dispatch, this run CLAIMS the queries this campaign has never fired, ledgers them one per line, and searches exactly those — so two runs of a campaign never cover the same ground and a run is never "affected by" an earlier one, it just owns a different slice. The query-granularity twin of the map method's per-city ledger. Ledger: `vault/lead-outreach/queries-fired-log.txt` (`slug_base\|query_hash\|date\|run_slug`, one row per query). `QUERY_REUSE_DAYS=<n>` re-opens queries older than n days; `QUERY_SCOPE=off` fires the pool as written. Pool fully spent → hard ABORT (exit 6) telling the operator to add new queries: a run that can search nothing must not burn a fan-out pretending otherwise. Never a warning, never a question — replaced the 2026-07-17 unrotated-queries warning, which halted a 2026-07-26 lb-insurance-tpa fire to ask the operator and violated "every fire is independent of prior runs" | `run_fire.py::scope_run_queries`, mirrored in `fire.md` Step 1.6 |
 | Bounce/block/spam/unsub = dead-letter forever | synced from Brevo events into `bounce-list.md` before every live send | `sync_brevo_events.py`, `send_batch_brevo.py` |
 | Constructed emails need URL evidence + live domain | `pattern_inferred`/`reconstructed` without an http(s) `email_source_url` are dropped; every contact domain must have MX/A; constructed ⇒ confidence ≤ medium | `enrich_contact_person.py` |
 | Degraded fan-out = halt | enrich outputs < 60% of batches (`ENRICH_MIN_COMPLETION`) or >30% dispatch failures ⇒ ABORT | `enrich_contact_person.py`, `run_fire.py` |

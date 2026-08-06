@@ -1,0 +1,34 @@
+{
+  "_comment": "GCC AI-receptionist. Riyadh-first per the 2026-07-27 GCC market-entry analysis: Saudi SMB verticals are the least-contested ground while Dubai real estate is the most-pitched niche, so places.txt sweeps KSA first and Dubai last. Targets are the analysis's ranked verticals, swept in order; they span different OSM keys (amenity/shop/office/craft) which one selector cannot express, hence the targets list. Cap is split evenly across targets. resolve_domains is ON: GCC OSM data carries correct names but almost no website tags (Riyadh clinics 2026-07-27: 61 named, 7 with a website), so Stage 2.5 resolves name->own domain and VERIFIES it against the fetched page. Unproven domains are dropped, never guessed.",
+  "targets": [
+    {
+      "selector": "\"amenity\"~\"clinic|dentist|doctors\"",
+      "vertical": "clinic"
+    },
+    {
+      "selector": "\"shop\"~\"beauty|hairdresser|massage\"",
+      "vertical": "salon"
+    },
+    {
+      "selector": "\"office\"=\"estate_agent\"",
+      "vertical": "realestate"
+    },
+    {
+      "selector": "\"craft\"~\"plumber|electrician|hvac\"",
+      "vertical": "homeservices"
+    },
+    {
+      "selector": "\"amenity\"=\"restaurant\"",
+      "vertical": "restaurant"
+    },
+    {
+      "selector": "\"shop\"=\"car_repair\"",
+      "vertical": "carservice"
+    }
+  ],
+  "max_per_run": 360,
+  "resolve_domains": true,
+  "resolve_query": "{name} {city} official website",
+  "resolve_max": 300,
+  "resolve_min_name_tokens": 2
+}

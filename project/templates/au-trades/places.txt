@@ -1,0 +1,17 @@
+# Australia — six metros
+Sydney|AU|-33.8688|151.2093|0.25
+Melbourne|AU|-37.8136|144.9631|0.25
+Brisbane|AU|-27.4698|153.0251|0.20
+Gold Coast|AU|-28.0167|153.4000|0.15
+Perth|AU|-31.9505|115.8605|0.20
+Adelaide|AU|-34.9285|138.6007|0.15
+Canberra|AU|-35.2809|149.1300|0.15
+Newcastle|AU|-32.9283|151.7817|0.15
+Wollongong|AU|-34.4278|150.8931|0.12
+Central Coast|AU|-33.4269|151.3428|0.12
+Hobart|AU|-42.8821|147.3272|0.12
+Geelong|AU|-38.1499|144.3617|0.12
+Sunshine Coast|AU|-26.6500|153.0667|0.15
+Cairns|AU|-16.9186|145.7781|0.12
+Townsville|AU|-19.2590|146.8169|0.12
+Darwin|AU|-12.4634|130.8456|0.12
