@@ -268,7 +268,7 @@ On any trigger, read in this order:
 
 `project/PIPELINE.md` is the long-form rationale for individual stages — read it only when you need the "why" behind one stage.
 
-**Do not** follow `project/README.md` (2025 Maps/Instagram/LinkedIn "free-stack" edition — deprecated), `project/agents/*.md` (human-readable reference, not loaded as sub-agents), or `project/.claude/agents/personalizer.md` (reviewed-mode only). Sub-agent definitions that `/fire` actually dispatches live ONLY in the cwd-level `.claude/agents/`.
+Sub-agent definitions that `/fire` actually dispatches live ONLY in the repo-root `.claude/agents/` — six of them, and nothing else in the tree defines one. (The deprecated `project/README.md`, the reference-only `project/agents/*.md`, and `personalizer.md` were deleted on 2026-08-05; if a doc still points you at them, it is stale.)
 
 Long-term memory (sent history, voice, ICP) lives in the ONE canonical vault at `project/vault/lead-outreach/` (relative `vault/...` from the `project/` run cwd). There is exactly one sent-log; never reintroduce a second copy.
 
@@ -299,7 +299,7 @@ its people. Opt in with `channels.json` = `["linkedin"]`. The old
 `lead-sourcing-linkedin` skill stays absent — do not reintroduce person-first
 scraping.
 
-All remaining tools are installed by the `setup-tools` skill on first run. The skill writes a `tools/` folder with everything ready to go.
+All of these are installed by `bash project/tools/install.sh` — it builds the venv (crawl4ai, ddgs), and pulls or compiles the `google-maps-scraper` binary into `tools/`. (The old `setup-tools` skill is retired along with the rest of the skills era.)
 
 ## 🔍 VERIFY AGAINST THE LAST RUN BEFORE ASSERTING ANYTHING (user directive 2026-07-31)
 

@@ -64,7 +64,19 @@ by being added to `sent-log.md` or `disqualified-log.txt`.
 
 ## Bootstrapping an empty vault
 
-The pipeline needs the files to exist, not to have content. From `project/`:
+The pipeline needs the files to exist, not to have content. One command, from
+`project/`:
+
+```bash
+bash tools/scripts/bootstrap_vault.sh
+```
+
+It copies the 9 skeleton docs from `vault-template/` and creates the 6 empty
+ledgers. It is idempotent and never overwrites a file you already have, so it is
+safe to re-run. `fire_campaign.sh` invokes it automatically, which is why a
+fresh clone can fire without any manual setup.
+
+Equivalent by hand, if you prefer to see what it does:
 
 ```bash
 mkdir -p vault/lead-outreach/{leads,targeting}
