@@ -66,6 +66,17 @@ CLASS_RANK = {"person": 0, "role": 1, "personal": 2}
 HOTEL_VERTICALS = {"hotel", "hotels", "resort", "resorts", "bnb", "guesthouse", "guesthouses"}
 VOLUME_RANK = {"high": 2, "medium": 1, "low": 0}
 
+# Traffic / demand tier, produced for EVERY vertical by extract_leads.py.
+# `unknown` sits ABOVE `low` deliberately: it means "we could not measure this
+# site", which is our fetch failing, not the business being quiet. A lead we
+# failed to measure must not be punished as though we had measured it.
+TRAFFIC_RANK = {"high": 3, "medium": 2, "unknown": 1, "low": 0}
+
+
+def _traffic_tier(lead: dict) -> str:
+    """Missing field (lead from an older extract) reads as `unknown`, never `low`."""
+    return str(lead.get("traffic_tier") or "unknown").lower()
+
 
 def load(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
@@ -159,12 +170,27 @@ def main() -> None:
                     seen_before.add(dom)
                     f.write(f"{dom}|{today}|{run_slug}|{reason}\n")
 
-    # Rank by fit: bigger/high-volume hotels first, then score, then
-    # person-before-role, then bigger chains first.
+    # Rank by fit. Traffic is a TIE-BREAK, deliberately placed BELOW the two
+    # email-quality keys (score, then person>role class).
+    #
+    # Calibrated 2026-08-10 over 990 domains: the tier itself discriminates well
+    # as a busyness measure (21.1% high / 34.6% medium / 44.2% low). What could
+    # NOT be validated is whether busy businesses are easier or HARDER to reach:
+    # only one run on disk carries both raw_html/ and Stage 5.5 outcomes
+    # (2026-07-27-lb-ngos-1, n=37, NGOs only, high tier n=1), which proves
+    # nothing either way. The plausible adverse mechanism is that larger orgs
+    # publish only role inboxes (info@, reception@), and email-availability
+    # failures are ALREADY 77% of all enrichment drops. Leading the sort with
+    # traffic could therefore lower send yield while picking better prospects.
+    # So traffic only reorders leads of EQUAL email quality: upside where it is
+    # free, no ability to push a hard-to-reach lead ahead of a reachable one.
+    # Revisit once a non-NGO run exists with both artifacts.
     kept.sort(key=lambda l: (
         -VOLUME_RANK.get(l.get("hotel_volume", "na"), -1) if l.get("hotel_volume", "na") != "na" else 0,
         -int(l.get("score", 0)),
         CLASS_RANK.get(l.get("email_class"), 9),
+        -TRAFFIC_RANK.get(_traffic_tier(l), 1),
+        -int(l.get("traffic_score", 0)),
         -int(l.get("branches_estimate", 0)),
     ))
 
