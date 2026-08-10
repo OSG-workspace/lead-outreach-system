@@ -865,7 +865,6 @@ def _report(run_dir, as_json: bool) -> int:
 
     Calibration only — reads pages already on disk, never fetches.
     """
-    import argparse  # noqa: F401  (kept local; module is import-first)
     from collections import Counter
     from pathlib import Path as _Path
 
@@ -945,7 +944,6 @@ def _report(run_dir, as_json: bool) -> int:
 
 
 def main() -> int:
-    import argparse
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--report", metavar="RUN_DIR",
                    help="score every domain in RUN_DIR/raw_html and print the "
