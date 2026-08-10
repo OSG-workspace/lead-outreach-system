@@ -46,8 +46,17 @@ _REVIEW_MICRODATA_REV_RE = re.compile(
 # `content` attribute, e.g. <span itemprop="reviewcount">1247</span> or
 # <span itemprop="ratingcount">1,247</span> reviews. Same reviews_microdata
 # signal, same _to_int parsing.
+#
+# Void elements (<meta>, <link>, <img>, <br>, <hr>, <input>) have no closing
+# tag, so the digits immediately after their ">" are unrelated trailing prose
+# ("<meta itemprop=\"reviewcount\" content=\"0\">1,204 people follow this
+# page"), not a text-content value — a void element never legitimately
+# carries Schema.org text content, so it is excluded here and left to
+# _REVIEW_MICRODATA_RE / _REVIEW_MICRODATA_REV_RE (the attribute-form
+# regexes), which are the correct and only handler for those.
+_VOID_ELEMENTS = frozenset({"meta", "link", "img", "br", "hr", "input"})
 _REVIEW_MICRODATA_TEXT_RE = re.compile(
-    r'itemprop\s*=\s*["\'](?:reviewcount|ratingcount)["\'][^>]*>'
+    r'<(\w+)\b[^>]*itemprop\s*=\s*["\'](?:reviewcount|ratingcount)["\'][^>]*>'
     r'\s*(\d[\d.,]{0,11})'
 )
 # Visible text, multilingual. The number may carry , or . as a thousands
@@ -82,12 +91,21 @@ def detect_review_count(html_lower: str) -> tuple[int, list[str]]:
             signals.add("reviews_jsonld")
             best = max(best, v)
 
-    for rx in (_REVIEW_MICRODATA_RE, _REVIEW_MICRODATA_REV_RE, _REVIEW_MICRODATA_TEXT_RE):
+    for rx in (_REVIEW_MICRODATA_RE, _REVIEW_MICRODATA_REV_RE):
         for m in rx.finditer(html_lower):
             v = _to_int(m.group(1))
             if v > 0:
                 signals.add("reviews_microdata")
                 best = max(best, v)
+
+    for m in _REVIEW_MICRODATA_TEXT_RE.finditer(html_lower):
+        tag, digits = m.group(1), m.group(2)
+        if tag in _VOID_ELEMENTS:
+            continue
+        v = _to_int(digits)
+        if v > 0:
+            signals.add("reviews_microdata")
+            best = max(best, v)
 
     for m in _REVIEW_TEXT_RE.finditer(html_lower):
         v = _to_int(m.group(1))

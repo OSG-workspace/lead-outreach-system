@@ -64,6 +64,31 @@ def test_microdata_text_content_feeds_existing_signal_not_a_new_one():
     assert len(signals) == 1
 
 
+def test_void_element_does_not_leak_trailing_prose_into_a_count():
+    """<meta> has no closing tag, so trailing prose after its '>' must not be
+    mistaken for the element's text content. The real microdata value here is
+    the content="0" attribute; "1,204 people follow this page" is unrelated."""
+    html = '<meta itemprop="reviewcount" content="0">1,204 people follow this page'
+    count, signals = detect_review_count(html)
+    assert count == 0
+    assert "reviews_microdata" not in signals
+
+
+def test_void_element_attribute_form_still_works():
+    """Proves the void-element fix didn't break the working content= attribute path."""
+    html = '<meta itemprop="reviewcount" content="431">'
+    count, signals = detect_review_count(html)
+    assert count == 431
+    assert "reviews_microdata" in signals
+
+
+def test_span_text_content_unaffected_by_void_element_fix():
+    html = '<span itemprop="reviewcount">1247</span>'
+    count, signals = detect_review_count(html)
+    assert count == 1247
+    assert "reviews_microdata" in signals
+
+
 def test_visible_text_review_count():
     html = "<p>rated 4.8 based on 1,247 reviews</p>"
     count, signals = detect_review_count(html)
