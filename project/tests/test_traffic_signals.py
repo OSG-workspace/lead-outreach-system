@@ -89,6 +89,31 @@ def test_span_text_content_unaffected_by_void_element_fix():
     assert "reviews_microdata" in signals
 
 
+def test_hyphenated_custom_element_starting_with_void_name_is_not_excluded():
+    """Custom Elements must contain a hyphen, so <input-group> is the normal
+    shape for such a tag. \\w+ would truncate the capture at "input" and
+    wrongly match it against _VOID_ELEMENTS; the tag name must be captured
+    whole so "input-group" (not in the void set) is correctly non-void."""
+    html = '<input-group itemprop="reviewcount">1247</input-group>'
+    count, signals = detect_review_count(html)
+    assert count == 1247
+    assert "reviews_microdata" in signals
+
+
+def test_void_element_fix_still_holds_after_hyphen_widening():
+    html = '<meta itemprop="reviewcount" content="0">1,204 people follow this page'
+    count, signals = detect_review_count(html)
+    assert count == 0
+    assert "reviews_microdata" not in signals
+
+
+def test_non_void_name_merely_starting_with_a_void_name_is_unaffected():
+    html = '<linkbox itemprop="reviewcount">99</linkbox>'
+    count, signals = detect_review_count(html)
+    assert count == 99
+    assert "reviews_microdata" in signals
+
+
 def test_visible_text_review_count():
     html = "<p>rated 4.8 based on 1,247 reviews</p>"
     count, signals = detect_review_count(html)

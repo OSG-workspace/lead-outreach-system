@@ -55,8 +55,12 @@ _REVIEW_MICRODATA_REV_RE = re.compile(
 # _REVIEW_MICRODATA_RE / _REVIEW_MICRODATA_REV_RE (the attribute-form
 # regexes), which are the correct and only handler for those.
 _VOID_ELEMENTS = frozenset({"meta", "link", "img", "br", "hr", "input"})
+# Tag name uses [a-z0-9-]+, not \w+: \w+ stops at a hyphen, which would
+# truncate a custom element like <input-group> down to "input" and wrongly
+# match it against _VOID_ELEMENTS. Input is already lowercased by the caller,
+# so no A-Z needed.
 _REVIEW_MICRODATA_TEXT_RE = re.compile(
-    r'<(\w+)\b[^>]*itemprop\s*=\s*["\'](?:reviewcount|ratingcount)["\'][^>]*>'
+    r'<([a-z0-9-]+)\b[^>]*itemprop\s*=\s*["\'](?:reviewcount|ratingcount)["\'][^>]*>'
     r'\s*(\d[\d.,]{0,11})'
 )
 # Visible text, multilingual. The number may carry , or . as a thousands
