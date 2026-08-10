@@ -160,12 +160,14 @@ _CHAT_RE = re.compile(
     r"widget\.intercom\.io|embed\.tawk\.to|client\.crisp\.chat|js\.driftt\.com"
     r"|static\.zdassets\.com|cdn\.livechatinc\.com|code\.tidio\.co"
 )
-_HREFLANG_RE = re.compile(r'hreflang\s*=\s*["\']([a-z]{2})(?:-[a-z0-9]{2,3})?["\']')
+_HREFLANG_RE = re.compile(r'hreflang\s*=\s*["\']([a-z]{2})(?:-[a-z0-9]{2,8})*["\']')
 
 _OP_CHAT_POINTS = 10
 _OP_MULTILANG_POINTS = 8
 _OP_PAGES_POINTS = 6
 _OP_BRANCH_POINTS = 6
+# Current weights sum to exactly 30 (10+8+6+6), so min() is unreachable today.
+# Kept as a defensive guard against future weight changes.
 _OP_MAX = 30
 
 _MANY_PAGES_MIN = 6

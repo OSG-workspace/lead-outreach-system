@@ -358,11 +358,38 @@ def test_multi_branch():
     assert "multi_branch" in signals
 
 
-def test_operational_points_capped_at_30():
+def test_operational_all_signals_sum_to_max():
+    """Verify that all four signals together sum to exactly _OP_MAX.
+    The min() guard in detect_operational_load is defensive against future weight changes."""
     html = ('<script src="https://widget.intercom.io/widget/abc"></script>'
             '<link rel="alternate" hreflang="en"><link rel="alternate" hreflang="de">')
-    points, _ = detect_operational_load(html, [f"p{i}" for i in range(10)], 40)
+    points, signals = detect_operational_load(html, [f"p{i}" for i in range(6)], 5)
+    assert len(signals) == 4
     assert points == 30
+
+
+def test_hreflang_script_subtags_zh_hans_with_en():
+    """zh-hans (4-char script subtag) should match and contribute to multilang when paired with en."""
+    html = ('<link rel="alternate" hreflang="zh-hans" href="/zh">'
+            '<link rel="alternate" hreflang="en" href="/en">')
+    _, signals = detect_operational_load(html, [], 0)
+    assert "multilang" in signals
+
+
+def test_hreflang_script_subtags_zh_hans_and_zh_hant_same_language():
+    """zh-hans and zh-hant both collapse to zh — one language, not multilang."""
+    html = ('<link rel="alternate" hreflang="zh-hans" href="/zh-hans">'
+            '<link rel="alternate" hreflang="zh-hant" href="/zh-hant">')
+    _, signals = detect_operational_load(html, [], 0)
+    assert "multilang" not in signals
+
+
+def test_x_default_does_not_contribute_to_multilang():
+    """x-default is private-use and x- does not match [a-z]{2}, so it doesn't register as a language."""
+    html = ('<link rel="alternate" hreflang="x-default" href="/">'
+            '<link rel="alternate" hreflang="en" href="/en">')
+    _, signals = detect_operational_load(html, [], 0)
+    assert "multilang" not in signals
 
 
 def test_operational_empty_input():
