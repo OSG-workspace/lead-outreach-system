@@ -42,6 +42,14 @@ _REVIEW_MICRODATA_REV_RE = re.compile(
     r'content\s*=\s*["\'](\d{1,9})["\'][^>]{0,120}?'
     r'itemprop\s*=\s*["\'](?:reviewcount|ratingcount)["\']'
 )
+# Microdata where the count is the element's TEXT CONTENT rather than a
+# `content` attribute, e.g. <span itemprop="reviewcount">1247</span> or
+# <span itemprop="ratingcount">1,247</span> reviews. Same reviews_microdata
+# signal, same _to_int parsing.
+_REVIEW_MICRODATA_TEXT_RE = re.compile(
+    r'itemprop\s*=\s*["\'](?:reviewcount|ratingcount)["\'][^>]*>'
+    r'\s*(\d[\d.,]{0,11})'
+)
 # Visible text, multilingual. The number may carry , or . as a thousands
 # separator; _to_int rejects anything that is really a decimal rating.
 _REVIEW_WORDS = r"(?:reviews?|ratings?|opiniones|avis|recensioni|bewertungen)"
@@ -74,7 +82,7 @@ def detect_review_count(html_lower: str) -> tuple[int, list[str]]:
             signals.add("reviews_jsonld")
             best = max(best, v)
 
-    for rx in (_REVIEW_MICRODATA_RE, _REVIEW_MICRODATA_REV_RE):
+    for rx in (_REVIEW_MICRODATA_RE, _REVIEW_MICRODATA_REV_RE, _REVIEW_MICRODATA_TEXT_RE):
         for m in rx.finditer(html_lower):
             v = _to_int(m.group(1))
             if v > 0:

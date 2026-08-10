@@ -40,6 +40,30 @@ def test_microdata_reversed_attribute_order():
     assert count == 512
 
 
+def test_microdata_text_content_bare_digits():
+    """Schema.org form where the count is the element's TEXT, not a content= attr."""
+    html = '<span itemprop="reviewcount">1247</span>'
+    count, signals = detect_review_count(html)
+    assert count == 1247
+    assert signals == ["reviews_microdata"]
+
+
+def test_microdata_text_content_thousands_separator():
+    html = '<span itemprop="ratingcount">1,247</span> reviews'
+    count, signals = detect_review_count(html)
+    assert count == 1247
+    assert signals == ["reviews_microdata"]
+
+
+def test_microdata_text_content_feeds_existing_signal_not_a_new_one():
+    """The text-content form must contribute reviews_microdata, never a new signal name."""
+    html = '<span itemprop="reviewcount">1247</span>'
+    _, signals = detect_review_count(html)
+    assert "reviews_microdata" in signals
+    assert "reviews_text" not in signals
+    assert len(signals) == 1
+
+
 def test_visible_text_review_count():
     html = "<p>rated 4.8 based on 1,247 reviews</p>"
     count, signals = detect_review_count(html)
@@ -63,9 +87,13 @@ def test_european_thousands_separator():
     assert count == 1247
 
 
-def test_decimal_rating_is_not_a_count():
+@pytest.mark.parametrize("html", [
+    "4.8 rating",          # digits directly followed by a matching review word: reaches the guard
+    "rating 4.8 stars",    # kept for coverage, though "stars" never matches _REVIEW_WORDS
+])
+def test_decimal_rating_is_not_a_count(html):
     """4.8 is a rating, not 48 reviews."""
-    count, _ = detect_review_count("rating 4.8 stars")
+    count, _ = detect_review_count(html)
     assert count == 0
 
 
@@ -94,6 +122,9 @@ def test_malformed_jsonld_does_not_raise():
 
 
 def test_signals_are_sorted_for_determinism():
+    """Pin WHICH signals fire (and in what order), not merely that the list is sorted —
+    `detect_review_count` returns `sorted(...)` on every path, so `signals == sorted(signals)`
+    holds trivially for any input and proves nothing on its own."""
     html = '{"reviewcount":50} <span itemprop="ratingcount" content="60"></span> based on 70 reviews'
     _, signals = detect_review_count(html)
-    assert signals == sorted(signals)
+    assert signals == ["reviews_jsonld", "reviews_microdata", "reviews_text"]
