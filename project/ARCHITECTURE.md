@@ -120,7 +120,7 @@ Sub-agents: name-finder is **Haiku** (high-volume lookup work); the three writer
 > `sweep_acceptance.js` and `messenger.js` drip it out daily (8–18 invites/day, 90/week).
 > A fire that "sends 0 on LinkedIn" is working correctly — see `linkedin/README.md`.
 
-**Run control files** (in `runs/<slug>/`, cloned from the template on bootstrap — see `templates/README.md` for THE general fixture structure; a new campaign is only a new folder): `icp.yaml` (required), **`sourcing.json`** (required — the single Stage-2 contract: `{"method":"map","selector":"\"office\"=\"lawyer\"","vertical":"law","max_per_run":350}`), `draft_mode.txt` (template\|custom), `channels.json` (`["email"]` and/or `"whatsapp"`), `countries.txt`, `qualify.json` (per-run gate, e.g. hotel size/volume), `pitch.json` (fixed-copy campaigns), optional `places.txt` `City|ISO2|lat|lon|half_width` (map method; default: built-in 195-city EU table). Map method walks the ledger `vault/lead-outreach/overpass-cities-fired.txt`, keyed `vertical|city`, so consecutive fires cover fresh cities region by region and different verticals never block each other (validated 2026-07-17: Chicago law-firms sweep, 44 usable candidates, zero code changes).
+**Run control files** (in `runs/<slug>/`, cloned from the template on bootstrap — see `templates/README.md` for THE general fixture structure; a new campaign is only a new folder): `icp.yaml` (required), **`sourcing.json`** (required — the single Stage-2 contract: `{"method":"map","selector":"\"office\"=\"lawyer\"","vertical":"law","max_per_run":350}`), `draft_mode.txt` (template\|custom), `channels.json` (`["email"]` and/or `"whatsapp"`), `countries.txt`, `qualify.json` (per-run gate, e.g. hotel size/volume, `min_traffic_tier` floor), `pitch.json` (fixed-copy campaigns), optional `places.txt` `City|ISO2|lat|lon|half_width` (map method; default: built-in 195-city EU table). Map method walks the ledger `vault/lead-outreach/overpass-cities-fired.txt`, keyed `vertical|city`, so consecutive fires cover fresh cities region by region and different verticals never block each other (validated 2026-07-17: Chicago law-firms sweep, 44 usable candidates, zero code changes).
 
 ---
 
@@ -169,6 +169,8 @@ Sub-agents: name-finder is **Haiku** (high-volume lookup work); the three writer
 | Drop freemail-only (`email_class: personal`) | always | `qualify_leads.py` |
 | Skip `modern_booking` signal | always (gap already solved) | `extract_leads.py` |
 | Per-run gate (e.g. hotel size ≥ medium) | `<run>/qualify.json` | `qualify_leads.py` |
+| Enrichment queue ordered by traffic tier | always, all campaigns, no config | `qualify_leads.py` |
+| Traffic floor (per-campaign, opt-in) | `<run>/qualify.json` `min_traffic_tier`; `unknown` exempt; drops NOT ledgered | `qualify_leads.py` |
 | Decision-maker DIRECT email required | generic mailboxes never sent | `name-finder` + `enrich_contact_person.py --merge` |
 | Phone/WhatsApp enrichment | **OPT-IN** (`--enrich-phone`, only when WhatsApp on) | `enrich_contact_person.py`, `name-finder.md` |
 | Enrich cap (top-N by fit) | **`ENRICH_MAX_LEADS`, default 250** (safety ceiling; per-run `enrich_cap.txt` overrides) — see §7 | `qualify_leads.py` |
