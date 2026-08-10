@@ -217,10 +217,87 @@ def test_full_marketing_stack():
     )
     depth, signals = detect_tracker_depth(html)
     assert depth == 4
-    assert signals == sorted(signals)
+    assert signals == ["tracker_ga4", "tracker_google_ads", "tracker_gtm", "tracker_meta_pixel"]
 
 
 def test_no_trackers():
     depth, signals = detect_tracker_depth("<html><body>plain site</body></html>")
+    assert depth == 0
+    assert signals == []
+
+
+# Tests proving narrowed patterns work both ways:
+# - Real embed snippets still fire
+# - Generic lookalikes do NOT fire
+
+
+def test_hotjar_real_embed_still_fires():
+    """Prove static.hotjar.com still detects hotjar."""
+    html = '<script src="https://static.hotjar.com/c/hotjar-12345.js"></script>'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_hotjar"]
+
+
+def test_hotjar_hjid_context_still_fires():
+    """Prove hjid: pattern still detects hotjar."""
+    html = '<script>var hjid = "654321";</script>'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_hotjar"]
+
+
+def test_hotjar_bare_function_call_does_not_fire():
+    """Prove removed hj( pattern: bare two-char function doesn't fire."""
+    html = '<script>function hj(x) { return x; } hj(foo);</script>'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 0
+    assert signals == []
+
+
+def test_meta_pixel_fbq_init_real_embed_still_fires():
+    """Prove fbq('init',...) still detects meta_pixel."""
+    html = '<script>fbq("init","123456");</script>'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_meta_pixel"]
+
+
+def test_meta_pixel_fbq_with_single_quotes_still_fires():
+    """Prove fbq('init',...) with single quotes still detects meta_pixel."""
+    html = "<script>fbq('init','789012');</script>"
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_meta_pixel"]
+
+
+def test_meta_pixel_fbq_bare_function_call_does_not_fire():
+    """Prove narrowed fbq pattern: fbq(someVar) without 'init' does not fire."""
+    html = '<script>function fbq(action) {} fbq(userData);</script>'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 0
+    assert signals == []
+
+
+def test_google_ads_aw_id_in_string_context_still_fires():
+    """Prove "aw-<id>" or 'aw-<id>' in string context still detects google_ads."""
+    html = '<script>var conversionId = "aw-987654321";</script>'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_google_ads"]
+
+
+def test_google_ads_aw_id_with_single_quote_still_fires():
+    """Prove 'aw-<id>' variant still detects google_ads."""
+    html = "<script>var id = 'aw-123456789';</script>"
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_google_ads"]
+
+
+def test_google_ads_bare_aw_id_without_quotes_does_not_fire():
+    """Prove narrowed pattern: bare aw-123456 in unrelated markup like id-aw-102938 does not fire."""
+    html = '<div class="item-id-aw-102938">Product asset</div>'
+    depth, signals = detect_tracker_depth(html)
     assert depth == 0
     assert signals == []

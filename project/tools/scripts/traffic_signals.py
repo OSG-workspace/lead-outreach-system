@@ -126,9 +126,9 @@ def detect_review_count(html_lower: str) -> tuple[int, list[str]]:
 _TRACKERS: dict[str, tuple[str, ...]] = {
     "ga4": (r"gtag/js\?id=g-", r"googletagmanager\.com/gtag"),
     "gtm": (r"gtm-[a-z0-9]{4,}", r"googletagmanager\.com/gtm\.js"),
-    "meta_pixel": (r"fbq\s*\(", r"connect\.facebook\.net/[^\"']*fbevents\.js"),
-    "google_ads": (r"googleadservices\.com", r"\baw-\d{6,}"),
-    "hotjar": (r"static\.hotjar\.com", r"\bhj\s*\(", r"hjid\s*:"),
+    "meta_pixel": (r"fbq\s*\(\s*[\"']init[\"']", r"connect\.facebook\.net/[^\"']*fbevents\.js"),
+    "google_ads": (r"googleadservices\.com", r"[\"']aw-\d{6,}"),
+    "hotjar": (r"static\.hotjar\.com", r"hjid\s*[:=]"),
     "clarity": (r"clarity\.ms/tag",),
     "segment": (r"cdn\.segment\.com", r"analytics\.load\s*\("),
     "mixpanel": (r"cdn\.mxpnl\.com", r"mixpanel\.init\s*\("),
