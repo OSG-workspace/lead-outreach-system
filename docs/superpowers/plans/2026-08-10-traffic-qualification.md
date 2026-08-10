@@ -1259,13 +1259,43 @@ def test_unknown_ranks_above_low_below_medium(tmp_path):
 
 
 def test_score_still_breaks_ties_within_a_tier(tmp_path):
-    """Traffic leads at BUCKET granularity; score still orders inside a bucket."""
+    """Within one traffic tier, the email-quality score still orders leads."""
     leads = [
         _lead("weak-com", traffic_tier="high", traffic_score=60, score=82),
         _lead("strong-com", traffic_tier="high", traffic_score=60, score=96),
     ]
     _, kept, _ = _run(tmp_path, leads)
     assert [l["lead_slug"] for l in kept] == ["strong-com", "weak-com"]
+
+
+def test_email_quality_outranks_traffic(tmp_path):
+    """THE core contract: traffic is a TIE-BREAK, never an override.
+
+    A quiet business with a findable decision-maker email must still beat a busy
+    business with a weak one. Calibration could not show that busy businesses
+    enrich BETTER, and the plausible mechanism runs the other way (big orgs
+    publish only info@/reception@, and email-availability failures are already
+    77% of all enrichment drops). So traffic must never push a hard-to-reach
+    lead ahead of a reachable one.
+    """
+    leads = [
+        _lead("busy-weak-com", traffic_tier="high", traffic_score=95, score=82),
+        _lead("quiet-strong-com", traffic_tier="low", traffic_score=0, score=96),
+    ]
+    _, kept, _ = _run(tmp_path, leads)
+    assert [l["lead_slug"] for l in kept] == ["quiet-strong-com", "busy-weak-com"]
+
+
+def test_email_class_outranks_traffic(tmp_path):
+    """Same contract at the email-CLASS key: person beats role regardless of traffic."""
+    leads = [
+        _lead("busy-role-com", traffic_tier="high", traffic_score=95,
+              score=90, email_class="role"),
+        _lead("quiet-person-com", traffic_tier="low", traffic_score=0,
+              score=90, email_class="person"),
+    ]
+    _, kept, _ = _run(tmp_path, leads)
+    assert [l["lead_slug"] for l in kept] == ["quiet-person-com", "busy-role-com"]
 
 
 def test_traffic_ranking_needs_no_config(tmp_path):
@@ -1324,15 +1354,26 @@ def _traffic_tier(lead: dict) -> str:
 Then replace the sort at lines 164-169 with:
 
 ```python
-    # Rank by fit. Traffic leads at BUCKET granularity so the scarce enrichment
-    # slots go to the busiest businesses; the existing score still orders WITHIN
-    # a bucket, which preserves the person>role email ordering that governs
-    # whether enrichment can succeed at all.
+    # Rank by fit. Traffic is a TIE-BREAK, deliberately placed BELOW the two
+    # email-quality keys (score, then person>role class).
+    #
+    # Calibrated 2026-08-10 over 990 domains: the tier itself discriminates well
+    # as a busyness measure (21.1% high / 34.6% medium / 44.2% low). What could
+    # NOT be validated is whether busy businesses are easier or HARDER to reach:
+    # only one run on disk carries both raw_html/ and Stage 5.5 outcomes
+    # (2026-07-27-lb-ngos-1, n=37, NGOs only, high tier n=1), which proves
+    # nothing either way. The plausible adverse mechanism is that larger orgs
+    # publish only role inboxes (info@, reception@), and email-availability
+    # failures are ALREADY 77% of all enrichment drops. Leading the sort with
+    # traffic could therefore lower send yield while picking better prospects.
+    # So traffic only reorders leads of EQUAL email quality: upside where it is
+    # free, no ability to push a hard-to-reach lead ahead of a reachable one.
+    # Revisit once a non-NGO run exists with both artifacts.
     kept.sort(key=lambda l: (
-        -TRAFFIC_RANK.get(_traffic_tier(l), 1),
         -VOLUME_RANK.get(l.get("hotel_volume", "na"), -1) if l.get("hotel_volume", "na") != "na" else 0,
         -int(l.get("score", 0)),
         CLASS_RANK.get(l.get("email_class"), 9),
+        -TRAFFIC_RANK.get(_traffic_tier(l), 1),
         -int(l.get("traffic_score", 0)),
         -int(l.get("branches_estimate", 0)),
     ))
@@ -1531,22 +1572,43 @@ git commit -m "feat(traffic): opt-in min_traffic_tier floor, unknown-safe and un
 - Consumes: `min_traffic_tier` from Task 8 and the measured distribution from Task 5.
 - Produces: no code; configuration and documentation only.
 
-**Do not guess a floor.** Use only the Task 5 numbers. Where a campaign has no calibration data — 19 of 21 fixtures have never fired a single city and therefore have no `raw_html/` at all — **leave the key absent.** An unmeasured campaign gets ranking (free, no risk) and no floor.
+**AMENDED 2026-08-10 — NO FLOOR SHIPS. The stop condition in Task 5 fired.**
 
-- [ ] **Step 1: Set the floor for calibrated campaigns only**
+Task 5's own gate was explicit: *"If the cross-tabulation shows no relationship
+between tier and enrichment success, the floors in Task 9 must not ship."* That gate
+tripped. Only one run on disk carries both `raw_html/` and Stage 5.5 outcomes
+(`2026-07-27-lb-ngos-1`, n=37, NGOs only, **high tier n=1**), which is far too little
+to justify dropping any lead — and what little there is points the wrong way (low tier
+80% enrichment success vs medium 62.5%).
 
-`eu-hotels` is the one campaign with substantial fetched HTML (790 files in `2026-08-01-eu-hotels`). Update `project/templates/eu-hotels/qualify.json`, keeping the existing keys:
+So this task ships **no `min_traffic_tier` value in any fixture.** The floor MECHANISM
+from Task 8 still ships, because an absent key means no floor and therefore no
+behaviour change anywhere. When a non-NGO run finally produces both artifacts, enabling
+a floor is a one-key edit — no code change.
 
-```json
-{
-  "_comment": "EU hotels: only BIG, high-call-volume properties qualify. A hotel lead must show a size/volume signal (room count, 4-5 star, or resort/spa/conference scale) detected from its own site at extract. Small B&Bs and quiet guesthouses are dropped before any enrichment agent runs. Non-generic decision-maker email is enforced separately at Stage 5.5. min_traffic_tier added 2026-08-10: calibrated against <N> domains in runs/2026-08-01-eu-hotels — see traffic_signals.py for the measured distribution. `unknown` is exempt and traffic drops are NOT ledgered, so a bad crawl day cannot retire a domain.",
-  "require_hotel_size_volume": true,
-  "min_hotel_volume": "medium",
-  "min_traffic_tier": "<measured>"
-}
+- [ ] **Step 1: Confirm no fixture sets a floor, and record why**
+
+Do NOT add `min_traffic_tier` to `eu-hotels/qualify.json` or to any other fixture.
+Leave `project/templates/eu-hotels/qualify.json`'s existing keys exactly as they are,
+and append ONE sentence to its `_comment` recording the decision:
+
+```
+min_traffic_tier deliberately NOT set (2026-08-10): the traffic signal is calibrated
+and ranked on, but tier-vs-enrichment could not be validated (only one run on disk
+had both raw_html/ and Stage 5.5 outcomes, n=37, NGOs, high tier n=1), so nothing is
+dropped for low traffic. Enabling a floor is a one-key edit once a non-NGO run
+produces both artifacts.
 ```
 
-Replace `<N>` and `<measured>` with the Task 5 numbers. If the Task 5 cross-tabulation showed no relationship between tier and enrichment success, **omit `min_traffic_tier` entirely** and note that in the `_comment`.
+Then verify by grep that the key appears in NO fixture:
+
+```bash
+cd "/Users/davidsmac/Downloads/lead-outreach-system 2/project"
+grep -rn "min_traffic_tier" templates/ && echo "FAIL: a fixture sets a floor" || echo "OK: no floor set anywhere"
+```
+
+Expected: the grep finds only the `_comment` prose above (which mentions the key name
+but sets no value), and no actual `"min_traffic_tier": "<tier>"` assignment.
 
 - [ ] **Step 2: Verify the fixture is valid JSON and still fire-ready**
 
