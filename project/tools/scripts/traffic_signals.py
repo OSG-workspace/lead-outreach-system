@@ -118,3 +118,37 @@ def detect_review_count(html_lower: str) -> tuple[int, list[str]]:
             best = max(best, v)
 
     return min(best, REVIEW_CLAMP), sorted(signals)
+
+
+# Traffic-DRIVING stack. Presence means the business is actively spending to
+# bring people to the site, and has enough volume to justify measuring it.
+# Patterns are matched against lowercased html, so ids like GTM-ABC read gtm-abc.
+_TRACKERS: dict[str, tuple[str, ...]] = {
+    "ga4": (r"gtag/js\?id=g-", r"googletagmanager\.com/gtag"),
+    "gtm": (r"gtm-[a-z0-9]{4,}", r"googletagmanager\.com/gtm\.js"),
+    "meta_pixel": (r"fbq\s*\(", r"connect\.facebook\.net/[^\"']*fbevents\.js"),
+    "google_ads": (r"googleadservices\.com", r"\baw-\d{6,}"),
+    "hotjar": (r"static\.hotjar\.com", r"\bhj\s*\(", r"hjid\s*:"),
+    "clarity": (r"clarity\.ms/tag",),
+    "segment": (r"cdn\.segment\.com", r"analytics\.load\s*\("),
+    "mixpanel": (r"cdn\.mxpnl\.com", r"mixpanel\.init\s*\("),
+    "tiktok": (r"analytics\.tiktok\.com",),
+    "linkedin_insight": (r"snap\.licdn\.com", r"_linkedin_partner_id"),
+}
+_TRACKER_RE = {
+    vendor: re.compile("|".join(pats)) for vendor, pats in _TRACKERS.items()
+}
+
+
+def detect_tracker_depth(html_lower: str) -> tuple[int, list[str]]:
+    """Return (distinct vendor count, sorted signal names).
+
+    Counting is per DISTINCT vendor: a GTM snippet repeated on four pages of
+    the same concatenated document is one vendor, not four.
+    """
+    signals = sorted(
+        f"tracker_{vendor}"
+        for vendor, rx in _TRACKER_RE.items()
+        if rx.search(html_lower)
+    )
+    return len(signals), signals

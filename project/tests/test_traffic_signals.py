@@ -11,7 +11,7 @@ import pytest
 PROJECT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT / "tools" / "scripts"))
 
-from traffic_signals import REVIEW_CLAMP, detect_review_count
+from traffic_signals import REVIEW_CLAMP, detect_review_count, detect_tracker_depth
 
 
 def test_jsonld_review_count():
@@ -178,3 +178,49 @@ def test_signals_are_sorted_for_determinism():
     html = '{"reviewcount":50} <span itemprop="ratingcount" content="60"></span> based on 70 reviews'
     _, signals = detect_review_count(html)
     assert signals == ["reviews_jsonld", "reviews_microdata", "reviews_text"]
+
+
+@pytest.mark.parametrize("html,vendor", [
+    ('<script src="https://www.googletagmanager.com/gtag/js?id=g-ab12cd34"></script>', "ga4"),
+    ('<script>(function(w,d){})(window,document);var x="gtm-abc1234";</script>', "gtm"),
+    ('<script>fbq("init","123456");</script>', "meta_pixel"),
+    ('<script src="https://connect.facebook.net/en_us/fbevents.js"></script>', "meta_pixel"),
+    ('<script src="https://www.googleadservices.com/pagead/conversion.js"></script>', "google_ads"),
+    ('<script>var aw="aw-987654321";</script>', "google_ads"),
+    ('<script src="https://static.hotjar.com/c/hotjar-123.js"></script>', "hotjar"),
+    ('<script src="https://www.clarity.ms/tag/abcd"></script>', "clarity"),
+    ('<script src="https://cdn.segment.com/analytics.js"></script>', "segment"),
+    ('<script src="https://cdn.mxpnl.com/libs/mixpanel.js"></script>', "mixpanel"),
+    ('<script src="https://analytics.tiktok.com/i18n/pixel/events.js"></script>', "tiktok"),
+    ('<script src="https://snap.licdn.com/li.lms-analytics/insight.min.js"></script>', "linkedin_insight"),
+])
+def test_each_tracker_vendor_detected(html, vendor):
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == [f"tracker_{vendor}"]
+
+
+def test_distinct_vendors_counted_not_occurrences():
+    """One vendor repeated four times is depth 1, not 4."""
+    html = 'gtm-aaa1111 gtm-bbb2222 gtm-ccc3333 gtm-ddd4444'
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 1
+    assert signals == ["tracker_gtm"]
+
+
+def test_full_marketing_stack():
+    html = (
+        '<script src="https://www.googletagmanager.com/gtag/js?id=g-xx"></script>'
+        'gtm-yyy1111'
+        '<script>fbq("init","1");</script>'
+        '<script src="https://www.googleadservices.com/pagead/conversion.js"></script>'
+    )
+    depth, signals = detect_tracker_depth(html)
+    assert depth == 4
+    assert signals == sorted(signals)
+
+
+def test_no_trackers():
+    depth, signals = detect_tracker_depth("<html><body>plain site</body></html>")
+    assert depth == 0
+    assert signals == []
