@@ -24,6 +24,8 @@ match lowercase keys — `reviewcount`, never `reviewCount`.
 """
 from __future__ import annotations
 
+import argparse
+import json
 import re
 
 # A single scraped junk number must not dominate the ordering.
@@ -222,10 +224,36 @@ _REVIEW_BUCKETS: tuple[tuple[int, int], ...] = (
 _TRACKER_POINTS_EACH = 8
 _TRACKER_MAX = 30
 
-# PROVISIONAL thresholds — Task 5 recalibrates these against the 5,368
-# already-fetched HTML files on disk and records the measurement here.
-TIER_HIGH_MIN = 55
-TIER_MEDIUM_MIN = 25
+# Calibrated 2026-08-10 against 990 domains with known tier (990 of 993 total;
+# 3 were `unknown`, excluded) across the 5 run folders on disk that still had
+# raw_html/: 2026-07-17-eu-hotels-4 (280), 2026-07-20-eu-hotels-3 (314),
+# 2026-07-27-au-trades-3 (179), 2026-07-27-lb-ngos-1 (57), 2026-08-01-eu-hotels
+# (160) — 5,368 HTML files in total. The provisional 55/25 thresholds were far
+# too strict: they scored only 6.9% of domains high and 62.7% low, which is not
+# a discriminating detector. At 38/22 the same corpus splits high 21.1%
+# (209), medium 34.6% (343), low 44.2% (438) — within target on the overall
+# corpus AND on every individual run (11.4-46.9% high per run; the au-trades
+# run runs hottest, as expected for a vertical that markets itself hard).
+#
+# Stage 5.5 enrichment cross-tab: only ONE run on disk has both raw_html/ and
+# enrichment ground truth (leads-with-contact.json + leads-dropped.json) —
+# 2026-07-27-lb-ngos-1, n=37 leads matched by domain (26 survived, 11
+# dropped), single vertical (NGO). Enrichment success by tier at these
+# thresholds: low 80.0% (16/20), medium 62.5% (10/16), high 0% (0/1, n=1 is
+# not meaningful on its own). Mean score of survivors (22.2) is LOWER than
+# mean score of drops (31.6); point-biserial correlation between raw score
+# and survival is -0.34. This is an INVERSE relationship, not the hoped-for
+# positive one — within this single run, busier-looking NGOs enrich WORSE,
+# plausibly because large international NGOs hide behind role-based inboxes
+# (info@, press@) rather than a named decision-maker, precisely the pattern a
+# high traffic score rewards. n=37 in one vertical is too thin to generalize
+# to hotels/trades/other verticals, but it is sufficient to reject the
+# hypothesis that this signal predicts enrichment success, at least here.
+# CONCERN carried forward: do not gate/drop leads on this tier without
+# re-measuring on a run that has both raw_html/ and enrichment outcomes in a
+# non-NGO vertical. See task-5-report.md for the full numbers.
+TIER_HIGH_MIN = 38
+TIER_MEDIUM_MIN = 22
 
 
 def _review_points(count: int) -> int:
@@ -291,3 +319,102 @@ def detect_traffic(
 
     signals = sorted(review_signals + tracker_signals + op_signals)
     return (tier, score, evidence, signals)
+
+
+def _report(run_dir, as_json: bool) -> int:
+    """Score every domain in a run's raw_html/ and print the tier distribution.
+
+    Calibration only — reads pages already on disk, never fetches.
+    """
+    from collections import Counter
+    from pathlib import Path as _Path
+
+    root = _Path(run_dir).resolve()
+    raw = root / "raw_html"
+    if not raw.is_dir():
+        print(f"ABORT: no raw_html/ under {root}")
+        return 2
+
+    verticals: dict[str, str] = {}
+    branches: dict[str, int] = {}
+    cand = root / "candidates-all.txt"
+    if cand.exists():
+        for line in cand.read_text().splitlines():
+            parts = line.split("|")
+            if len(parts) >= 5:
+                verticals[parts[0].strip().lower()] = parts[3].strip().lower()
+                try:
+                    branches[parts[0].strip().lower()] = int(parts[4])
+                except ValueError:
+                    branches[parts[0].strip().lower()] = 0
+
+    pages_by_domain: dict[str, list[_Path]] = {}
+    for f in sorted(raw.glob("*.html")):
+        domain = f.name.split("__", 1)[0].replace("-", ".")
+        pages_by_domain.setdefault(domain, []).append(f)
+
+    tiers: Counter[str] = Counter()
+    by_vertical: dict[str, Counter[str]] = {}
+    signal_freq: Counter[str] = Counter()
+    scores: list[int] = []
+
+    for domain, files in sorted(pages_by_domain.items()):
+        chunks = []
+        for f in files:
+            try:
+                if f.stat().st_size >= 500:
+                    chunks.append(f.read_text(errors="ignore"))
+            except OSError:
+                continue
+        html_lower = "\n".join(chunks).lower()
+        tier, score, _, signals = detect_traffic(
+            html_lower, [f.name for f in files], branches.get(domain, 0)
+        )
+        tiers[tier] += 1
+        scores.append(score)
+        signal_freq.update(signals)
+        v = verticals.get(domain, "unknown")
+        by_vertical.setdefault(v, Counter())[tier] += 1
+
+    total = sum(tiers.values())
+    if as_json:
+        print(json.dumps({
+            "run": root.name,
+            "total": total,
+            "tiers": {t: tiers.get(t, 0) for t in ("high", "medium", "low", "unknown")},
+            "by_vertical": {v: dict(c) for v, c in sorted(by_vertical.items())},
+            "signals": dict(signal_freq.most_common()),
+            "score_min": min(scores) if scores else 0,
+            "score_max": max(scores) if scores else 0,
+        }, indent=2))
+        return 0
+
+    print(f"Traffic report for {root.name}: {total} domains")
+    for t in ("high", "medium", "low", "unknown"):
+        n = tiers.get(t, 0)
+        pct = (100.0 * n / total) if total else 0.0
+        print(f"  {t:<8} {n:>5}  {pct:5.1f}%")
+    print("  by vertical:")
+    for v, c in sorted(by_vertical.items()):
+        row = " ".join(f"{t}={c.get(t, 0)}" for t in ("high", "medium", "low", "unknown"))
+        print(f"    {v:<16} {row}")
+    print("  signal frequency:")
+    for sig, n in signal_freq.most_common():
+        print(f"    {sig:<24} {n}")
+    return 0
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--report", metavar="RUN_DIR",
+                   help="score every domain in RUN_DIR/raw_html and print the "
+                        "tier distribution (calibration only, never fetches)")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    a = p.parse_args()
+    if not a.report:
+        p.error("nothing to do: pass --report <run-dir>")
+    return _report(a.report, a.json)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

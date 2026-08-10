@@ -499,3 +499,57 @@ def test_evidence_is_human_readable():
     _, _, evidence, _ = detect_traffic(html, ["a"], 0)
     assert "420 reviews" in evidence
     assert "tracker" in evidence.lower() or "1" in evidence
+
+
+import json
+import subprocess
+import sys as _sys
+
+SCRIPT = PROJECT / "tools" / "scripts" / "traffic_signals.py"
+
+
+def test_report_mode_prints_distribution(tmp_path):
+    raw = tmp_path / "raw_html"
+    raw.mkdir()
+    busy = ('{"reviewcount":1500}gtm-abc1234 fbq( '
+            'https://www.googletagmanager.com/gtag/js?id=g-x '
+            'https://widget.intercom.io/widget/abc') + ("<p>text</p>" * 400)
+    quiet = "<p>a small quiet shop</p>" * 400
+    (raw / "busy-com__index.html").write_text(busy)
+    (raw / "quiet-com__index.html").write_text(quiet)
+    (tmp_path / "candidates-all.txt").write_text(
+        "busy.com|Busy|ES|hotel|0\nquiet.com|Quiet|ES|hotel|0\n"
+    )
+
+    r = subprocess.run(
+        [_sys.executable, str(SCRIPT), "--report", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    assert "high" in r.stdout
+    assert "low" in r.stdout
+    assert "hotel" in r.stdout
+
+
+def test_report_mode_json_output(tmp_path):
+    raw = tmp_path / "raw_html"
+    raw.mkdir()
+    (raw / "x-com__index.html").write_text("<p>hello</p>" * 400)
+    (tmp_path / "candidates-all.txt").write_text("x.com|X|ES|hotel|0\n")
+
+    r = subprocess.run(
+        [_sys.executable, str(SCRIPT), "--report", str(tmp_path), "--json"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert payload["total"] == 1
+    assert set(payload["tiers"]) == {"high", "medium", "low", "unknown"}
+
+
+def test_report_mode_missing_run_dir_exits_nonzero(tmp_path):
+    r = subprocess.run(
+        [_sys.executable, str(SCRIPT), "--report", str(tmp_path / "nope")],
+        capture_output=True, text=True,
+    )
+    assert r.returncode != 0
