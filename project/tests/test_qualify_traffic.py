@@ -138,3 +138,85 @@ def test_lead_without_traffic_fields_is_treated_as_unknown(tmp_path):
     leads = [_lead("low-com", traffic_tier="low", traffic_score=5), old]
     _, kept, _ = _run(tmp_path, leads)
     assert [l["lead_slug"] for l in kept] == ["old-com", "low-com"]
+
+
+def test_floor_drops_low_traffic(tmp_path):
+    leads = [
+        _lead("low-com", traffic_tier="low", traffic_score=5),
+        _lead("high-com", traffic_tier="high", traffic_score=80),
+    ]
+    _, kept, _ = _run(tmp_path, leads, {"min_traffic_tier": "medium"})
+    assert [l["lead_slug"] for l in kept] == ["high-com"]
+
+
+def test_floor_keeps_at_and_above_the_tier(tmp_path):
+    leads = [
+        _lead("medium-com", traffic_tier="medium", traffic_score=40),
+        _lead("high-com", traffic_tier="high", traffic_score=80),
+    ]
+    _, kept, _ = _run(tmp_path, leads, {"min_traffic_tier": "medium"})
+    assert {l["lead_slug"] for l in kept} == {"medium-com", "high-com"}
+
+
+def test_unknown_survives_any_floor(tmp_path):
+    """RULE 1 — a site we failed to measure is our fetch failing, not a quiet business."""
+    leads = [
+        _lead("unknown-com", traffic_tier="unknown", traffic_score=0),
+        _lead("low-com", traffic_tier="low", traffic_score=5),
+    ]
+    _, kept, _ = _run(tmp_path, leads, {"min_traffic_tier": "high"})
+    assert [l["lead_slug"] for l in kept] == ["unknown-com"]
+
+
+def test_traffic_drop_never_reaches_the_permanent_ledger(tmp_path):
+    """RULE 2 — a same-day crawl verdict must not blacklist a domain forever."""
+    leads = [
+        _lead("low-com", traffic_tier="low", traffic_score=5),
+        _lead("high-com", traffic_tier="high", traffic_score=80),
+    ]
+    _, kept, ledger = _run(tmp_path, leads, {"min_traffic_tier": "medium"})
+    assert len(kept) == 1
+    assert "low.com" not in ledger
+    assert "traffic" not in ledger
+
+
+def test_hotel_volume_drop_still_reaches_the_ledger(tmp_path):
+    """Rule 2 is scoped to traffic — it must not disable the existing ledger."""
+    leads = [
+        _lead("small-com", vertical="hotel", hotel_volume="low", traffic_tier="high",
+              traffic_score=80),
+        _lead("big-com", vertical="hotel", hotel_volume="high", traffic_tier="high",
+              traffic_score=80),
+    ]
+    _, kept, ledger = _run(
+        tmp_path, leads,
+        {"require_hotel_size_volume": True, "min_hotel_volume": "medium",
+         "min_traffic_tier": "medium"},
+    )
+    assert [l["lead_slug"] for l in kept] == ["big-com"]
+    assert "hotel-volume-too-low" in ledger
+    assert "small.com" in ledger
+
+
+def test_absent_key_means_no_floor(tmp_path):
+    """Protects the 20 fixtures that have no qualify.json."""
+    leads = [_lead("low-com", traffic_tier="low", traffic_score=5)]
+    _, kept, _ = _run(tmp_path, leads, {})
+    assert len(kept) == 1
+
+
+def test_invalid_floor_value_behaves_as_absent(tmp_path):
+    """A typo must never silently start dropping leads."""
+    leads = [_lead("low-com", traffic_tier="low", traffic_score=5)]
+    _, kept, _ = _run(tmp_path, leads, {"min_traffic_tier": "enormous"})
+    assert len(kept) == 1
+
+
+def test_floor_drop_is_counted_in_output(tmp_path):
+    leads = [
+        _lead("low-com", traffic_tier="low", traffic_score=5),
+        _lead("high-com", traffic_tier="high", traffic_score=80),
+    ]
+    r, _, _ = _run(tmp_path, leads, {"min_traffic_tier": "medium"})
+    assert "traffic" in r.stdout.lower()
+    assert "1" in r.stdout

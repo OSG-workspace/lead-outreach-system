@@ -98,7 +98,20 @@ def main() -> None:
     require_hotel_volume = bool(cfg.get("require_hotel_size_volume"))
     min_volume = VOLUME_RANK.get(str(cfg.get("min_hotel_volume", "medium")).lower(), 1)
 
+    # Optional per-campaign traffic floor. ABSENT KEY = NO FLOOR, so the 20
+    # fixtures with no qualify.json are untouched. An INVALID value also means
+    # no floor: a typo must never silently start dropping leads.
+    raw_floor = str(cfg.get("min_traffic_tier", "")).lower().strip()
+    min_traffic = TRAFFIC_RANK.get(raw_floor) if raw_floor in TRAFFIC_RANK else None
+    if raw_floor and min_traffic is None:
+        print(f"  WARNING: ignoring invalid min_traffic_tier={raw_floor!r} "
+              f"(expected one of high/medium/low) — no traffic floor applied")
+    if min_traffic is not None and raw_floor == "unknown":
+        print("  WARNING: min_traffic_tier='unknown' is meaningless — no floor applied")
+        min_traffic = None
+
     dropped_freemail = dropped_score = dropped_signal = dropped_small_hotel = 0
+    dropped_traffic = 0
     kept: list[dict] = []
     disqualified: list[tuple[str, str]] = []   # (domain, reason) -> permanent block
 
@@ -132,6 +145,15 @@ def main() -> None:
             if VOLUME_RANK.get(tier, 0) < min_volume:
                 dropped_small_hotel += 1
                 disqualified.append((_domain(l), "hotel-volume-too-low"))
+                continue
+        # Traffic floor. Deliberately does NOT append to `disqualified`: that
+        # ledger blocks a domain permanently on every future run and every
+        # channel, and a traffic verdict depends on how well we crawled the site
+        # TODAY. `unknown` is exempt — we never punish a site we failed to measure.
+        if min_traffic is not None:
+            t = _traffic_tier(l)
+            if t != "unknown" and TRAFFIC_RANK.get(t, 0) < min_traffic:
+                dropped_traffic += 1
                 continue
         kept.append(l)
 
@@ -206,6 +228,9 @@ def main() -> None:
     if require_hotel_volume:
         print(f"  dropped small/low-volume hotel: {dropped_small_hotel} "
               f"(need >= {cfg.get('min_hotel_volume','medium')} size/volume signal)")
+    if min_traffic is not None:
+        print(f"  dropped low-traffic:     {dropped_traffic} "
+              f"(need >= {raw_floor} traffic tier; not ledgered — this run only)")
     print(f"  qualified before cap:    {len(kept)}")
     if over_cap > 0:
         print(f"  CAPPED OFF (top-{args.cap} kept): {over_cap} qualified leads held back "
