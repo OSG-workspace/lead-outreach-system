@@ -202,3 +202,92 @@ def detect_operational_load(
         signals.append("multi_branch")
 
     return min(points, _OP_MAX), sorted(signals)
+
+
+# Below this many characters of concatenated page text we cannot judge the
+# business at all. That state is `unknown`, which is NEVER dropped — a site we
+# failed to crawl is our fetch failing, not a quiet business. Lifetime
+# fetch->extract survival is 50.7% (16,572/32,681), so this case is common.
+MIN_HTML_FOR_JUDGMENT = 2_000
+
+# Review-count -> points. Buckets, not a curve: the raw number is noisy
+# (different platforms, different aggregation windows) but its ORDER OF
+# MAGNITUDE is meaningful.
+_REVIEW_BUCKETS: tuple[tuple[int, int], ...] = (
+    (500, 40),
+    (100, 30),
+    (25, 20),
+    (1, 10),
+)
+_TRACKER_POINTS_EACH = 8
+_TRACKER_MAX = 30
+
+# PROVISIONAL thresholds — Task 5 recalibrates these against the 5,368
+# already-fetched HTML files on disk and records the measurement here.
+TIER_HIGH_MIN = 55
+TIER_MEDIUM_MIN = 25
+
+
+def _review_points(count: int) -> int:
+    for threshold, points in _REVIEW_BUCKETS:
+        if count >= threshold:
+            return points
+    return 0
+
+
+def detect_traffic(
+    html_lower: str,
+    pages_scanned: list[str],
+    branches_estimate: int,
+) -> tuple[str, int, str, list[str]]:
+    """Score how busy a business is, from pages we already fetched.
+
+    Returns (tier, score, evidence, signals):
+      tier   — high | medium | low | unknown
+      score  — 0-100, for fine-grained ordering WITHIN a tier
+      evidence — human-readable, e.g. "1247 reviews; 3 trackers; live chat"
+      signals  — sorted machine-readable keys, for later threshold tuning
+
+    `unknown` means "not enough page text to judge", and is deliberately
+    distinct from `low`. Callers must never drop an `unknown`.
+    """
+    if len(html_lower.strip()) < MIN_HTML_FOR_JUDGMENT:
+        return ("unknown", 0, "insufficient html to judge traffic", [])
+
+    reviews, review_signals = detect_review_count(html_lower)
+    depth, tracker_signals = detect_tracker_depth(html_lower)
+    op_points, op_signals = detect_operational_load(
+        html_lower, pages_scanned, branches_estimate
+    )
+
+    score = (
+        _review_points(reviews)
+        + min(depth * _TRACKER_POINTS_EACH, _TRACKER_MAX)
+        + op_points
+    )
+    score = max(0, min(score, 100))
+
+    if score >= TIER_HIGH_MIN:
+        tier = "high"
+    elif score >= TIER_MEDIUM_MIN:
+        tier = "medium"
+    else:
+        tier = "low"
+
+    bits: list[str] = []
+    if reviews:
+        bits.append(f"{reviews} reviews")
+    if depth:
+        bits.append(f"{depth} tracker{'s' if depth != 1 else ''}")
+    if "chat_widget" in op_signals:
+        bits.append("live chat")
+    if "multilang" in op_signals:
+        bits.append("multi-language")
+    if "many_pages" in op_signals:
+        bits.append(f"{len(pages_scanned)} pages")
+    if "multi_branch" in op_signals:
+        bits.append(f"{branches_estimate} branches")
+    evidence = "; ".join(bits) if bits else "no demand signals found"
+
+    signals = sorted(review_signals + tracker_signals + op_signals)
+    return (tier, score, evidence, signals)

@@ -396,3 +396,106 @@ def test_operational_empty_input():
     points, signals = detect_operational_load("", [], 0)
     assert points == 0
     assert signals == []
+
+
+from traffic_signals import MIN_HTML_FOR_JUDGMENT, detect_traffic
+
+
+def _pad(core: str = "") -> str:
+    """Real HTML long enough to be judged (short docs return 'unknown')."""
+    return core + ("<p>lorem ipsum dolor sit amet consectetur. </p>" * 80)
+
+
+def test_short_html_is_unknown_never_low():
+    tier, score, evidence, signals = detect_traffic("<html></html>", [], 0)
+    assert tier == "unknown"
+    assert score == 0
+    assert signals == []
+    assert "insufficient" in evidence
+
+
+def test_empty_html_is_unknown():
+    assert detect_traffic("", [], 0)[0] == "unknown"
+
+
+def test_whitespace_only_html_is_unknown():
+    assert detect_traffic("   \n\t  ", [], 0)[0] == "unknown"
+
+
+def test_min_html_threshold_is_the_boundary():
+    assert detect_traffic("x" * (MIN_HTML_FOR_JUDGMENT - 1), [], 0)[0] == "unknown"
+    assert detect_traffic("x" * MIN_HTML_FOR_JUDGMENT, [], 0)[0] != "unknown"
+
+
+def test_busy_site_is_high():
+    html = _pad(
+        '{"reviewcount":1500}'
+        '<script src="https://www.googletagmanager.com/gtag/js?id=g-x"></script>'
+        'gtm-abc1234'
+        '<script>fbq("init","1");</script>'
+        '<script src="https://widget.intercom.io/widget/abc"></script>'
+    )
+    tier, score, evidence, signals = detect_traffic(html, [f"p{i}" for i in range(8)], 6)
+    assert tier == "high"
+    assert score >= 55
+    assert "1500 reviews" in evidence
+    assert signals == sorted(signals)
+
+
+def test_quiet_site_is_low():
+    tier, score, _, _ = detect_traffic(_pad("<p>welcome to our small shop</p>"), ["index"], 0)
+    assert tier == "low"
+    assert score < 25
+
+
+def test_middling_site_is_medium():
+    html = _pad('{"reviewcount":60}<script src="https://www.googletagmanager.com/gtag/js?id=g-x"></script>')
+    tier, score, _, _ = detect_traffic(html, ["index", "contact"], 0)
+    assert tier == "medium"
+    assert 25 <= score < 55
+
+
+def test_score_never_exceeds_100():
+    html = _pad(
+        '{"reviewcount":49000}'
+        '<script src="https://www.googletagmanager.com/gtag/js?id=g-x"></script>'
+        'gtm-abc1234 fbq( googleadservices.com static.hotjar.com clarity.ms/tag'
+        'cdn.segment.com cdn.mxpnl.com analytics.tiktok.com snap.licdn.com'
+        '<script src="https://widget.intercom.io/widget/abc"></script>'
+        '<link rel="alternate" hreflang="en"><link rel="alternate" hreflang="de">'
+    )
+    _, score, _, _ = detect_traffic(html, [f"p{i}" for i in range(20)], 50)
+    assert 0 <= score <= 100
+
+
+def test_deterministic_across_repeated_calls():
+    html = _pad('{"reviewcount":300}gtm-abc1234 fbq(')
+    first = detect_traffic(html, ["a", "b"], 3)
+    for _ in range(20):
+        assert detect_traffic(html, ["a", "b"], 3) == first
+
+
+def test_deterministic_across_hash_seeds():
+    """Guards the PYTHONHASHSEED class of bug that hit pick_best."""
+    import subprocess
+    import sys as _sys
+    snippet = (
+        "import sys; sys.path.insert(0, %r);"
+        "from traffic_signals import detect_traffic;"
+        "print(detect_traffic('{\"reviewcount\":300}gtm-abc1234 fbq(' + 'x'*3000,"
+        "['a','b'], 3))" % str(PROJECT / "tools" / "scripts")
+    )
+    outs = set()
+    for seed in ("0", "1", "42", "12345"):
+        r = subprocess.run([_sys.executable, "-c", snippet], capture_output=True,
+                           text=True, env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"})
+        assert r.returncode == 0, r.stderr
+        outs.add(r.stdout.strip())
+    assert len(outs) == 1
+
+
+def test_evidence_is_human_readable():
+    html = _pad('{"reviewcount":420}gtm-abc1234')
+    _, _, evidence, _ = detect_traffic(html, ["a"], 0)
+    assert "420 reviews" in evidence
+    assert "tracker" in evidence.lower() or "1" in evidence
