@@ -301,3 +301,71 @@ def test_google_ads_bare_aw_id_without_quotes_does_not_fire():
     depth, signals = detect_tracker_depth(html)
     assert depth == 0
     assert signals == []
+
+
+from traffic_signals import detect_operational_load
+
+
+@pytest.mark.parametrize("html", [
+    '<script src="https://widget.intercom.io/widget/abc"></script>',
+    '<script src="https://embed.tawk.to/123/default"></script>',
+    '<script src="https://client.crisp.chat/l.js"></script>',
+    '<script src="https://js.driftt.com/include/drift.js"></script>',
+    '<script src="https://static.zdassets.com/ekr/snippet.js"></script>',
+    '<script src="https://cdn.livechatinc.com/tracking.js"></script>',
+    '<script src="https://code.tidio.co/abc.js"></script>',
+])
+def test_chat_widgets_detected(html):
+    points, signals = detect_operational_load(html, [], 0)
+    assert "chat_widget" in signals
+    assert points >= 10
+
+
+def test_multilang_needs_two_distinct_languages():
+    html = ('<link rel="alternate" hreflang="en" href="/en">'
+            '<link rel="alternate" hreflang="fr" href="/fr">')
+    points, signals = detect_operational_load(html, [], 0)
+    assert "multilang" in signals
+
+
+def test_single_hreflang_is_not_multilang():
+    html = '<link rel="alternate" hreflang="en" href="/en">'
+    _, signals = detect_operational_load(html, [], 0)
+    assert "multilang" not in signals
+
+
+def test_hreflang_region_variants_are_one_language():
+    """en-us and en-gb are the same language, not two."""
+    html = ('<link rel="alternate" hreflang="en-us" href="/us">'
+            '<link rel="alternate" hreflang="en-gb" href="/gb">')
+    _, signals = detect_operational_load(html, [], 0)
+    assert "multilang" not in signals
+
+
+def test_many_pages():
+    pages = [f"p{i}" for i in range(6)]
+    _, signals = detect_operational_load("", pages, 0)
+    assert "many_pages" in signals
+
+
+def test_few_pages_is_not_many():
+    _, signals = detect_operational_load("", ["a", "b"], 0)
+    assert "many_pages" not in signals
+
+
+def test_multi_branch():
+    _, signals = detect_operational_load("", [], 5)
+    assert "multi_branch" in signals
+
+
+def test_operational_points_capped_at_30():
+    html = ('<script src="https://widget.intercom.io/widget/abc"></script>'
+            '<link rel="alternate" hreflang="en"><link rel="alternate" hreflang="de">')
+    points, _ = detect_operational_load(html, [f"p{i}" for i in range(10)], 40)
+    assert points == 30
+
+
+def test_operational_empty_input():
+    points, signals = detect_operational_load("", [], 0)
+    assert points == 0
+    assert signals == []

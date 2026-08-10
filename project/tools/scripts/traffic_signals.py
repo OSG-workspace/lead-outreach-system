@@ -152,3 +152,51 @@ def detect_tracker_depth(html_lower: str) -> tuple[int, list[str]]:
         if rx.search(html_lower)
     )
     return len(signals), signals
+
+
+# Operational load: investments a business only makes when inbound volume
+# forces it to.
+_CHAT_RE = re.compile(
+    r"widget\.intercom\.io|embed\.tawk\.to|client\.crisp\.chat|js\.driftt\.com"
+    r"|static\.zdassets\.com|cdn\.livechatinc\.com|code\.tidio\.co"
+)
+_HREFLANG_RE = re.compile(r'hreflang\s*=\s*["\']([a-z]{2})(?:-[a-z0-9]{2,3})?["\']')
+
+_OP_CHAT_POINTS = 10
+_OP_MULTILANG_POINTS = 8
+_OP_PAGES_POINTS = 6
+_OP_BRANCH_POINTS = 6
+_OP_MAX = 30
+
+_MANY_PAGES_MIN = 6
+_MULTI_BRANCH_MIN = 5
+
+
+def detect_operational_load(
+    html_lower: str,
+    pages_scanned: list[str],
+    branches_estimate: int,
+) -> tuple[int, list[str]]:
+    """Return (points 0-30, sorted signal names)."""
+    points = 0
+    signals: list[str] = []
+
+    if _CHAT_RE.search(html_lower):
+        points += _OP_CHAT_POINTS
+        signals.append("chat_widget")
+
+    # Region variants of one language (en-us, en-gb) are NOT two languages.
+    languages = {m.group(1) for m in _HREFLANG_RE.finditer(html_lower)}
+    if len(languages) >= 2:
+        points += _OP_MULTILANG_POINTS
+        signals.append("multilang")
+
+    if len(pages_scanned) >= _MANY_PAGES_MIN:
+        points += _OP_PAGES_POINTS
+        signals.append("many_pages")
+
+    if branches_estimate >= _MULTI_BRANCH_MIN:
+        points += _OP_BRANCH_POINTS
+        signals.append("multi_branch")
+
+    return min(points, _OP_MAX), sorted(signals)
