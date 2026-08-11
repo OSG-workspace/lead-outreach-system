@@ -437,6 +437,41 @@ def candidates_for_city(city: str, places: dict, selector: str, vertical: str,
     return lines, already_seen, unresolved
 
 
+def sweep_outcome(total: int, total_unresolved: int, cities_completed: int,
+                  skipped_seen: int) -> tuple[int, str]:
+    """Decide how a finished Overpass sweep should exit. -> (exit_code, message).
+
+    exit 0 = produced yield; exit 8 = no fresh ground (an expected end state, so
+    a run's OTHER sources still carry it); exit 1 = anomalous, halt loudly.
+
+    This mirrors `sweep_outcome` in source_places.py, and exists because it
+    previously did not. The old code was `if not total: sys.exit("ABORT: ...")`,
+    and `sys.exit(<str>)` exits **1**, which run_fire.py does not tolerate
+    (it tolerates only 8). Two consequences, both real:
+
+      * `total` counts ONLY website-tagged rows. The name-only `unresolved`
+        rows this sweep just wrote for Stage 2.5 to resolve were ignored, so a
+        target returning 300 correctly-named businesses with no `website` tag
+        killed the entire fire and threw away the file it had just produced.
+        Measured on 2026-08-09-au-trades: 50 website-tagged rows against 1,217
+        unresolved — that run was carried almost entirely by name-only rows.
+      * "every city already swept" is the textbook no-fresh-ground state that
+        exit 8 exists for, and it was also being reported as a hard failure.
+    """
+    if total or total_unresolved:
+        return 0, ""
+    if cities_completed == 0:
+        return 8, ("NO FRESH GROUND: every requested city is already swept for this "
+                   "vertical. Add rows to places.txt, widen the selector, or pass "
+                   "--ignore-ledger.")
+    if skipped_seen:
+        return 8, (f"NO FRESH GROUND: swept {cities_completed} city/cities; all "
+                   f"{skipped_seen} businesses found were already sourced or contacted.")
+    return 1, (f"ABORT: swept {cities_completed} city/cities and Overpass returned 0 "
+               f"businesses with a website tag and 0 name-only businesses. Check the "
+               f"selector is a valid OSM tag expression and that the mirrors are up.")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -549,6 +584,7 @@ def main() -> None:
     print(f"Fresh-only cap: {len(blocked_domains)} previously-seen domains excluded at source.")
 
     total = 0
+    total_unresolved = 0
     batch_n = 0
     skipped_seen = 0
     completed: list[str] = []
@@ -564,6 +600,9 @@ def main() -> None:
         lines, n_seen, unresolved = res
         if unresolved:
             # Name-only businesses -> Stage 2.5 resolves + VERIFIES their domain.
+            # These COUNT as yield (see sweep_outcome): on a weakly-mapped market
+            # they are often the entire harvest, so the exit decision must see them.
+            total_unresolved += len(unresolved)
             (run / f"unresolved-{a.batch_prefix}-{batch_n + 1:03d}.txt").write_text(
                 "\n".join(unresolved) + "\n")
         skipped_seen += n_seen
@@ -600,10 +639,14 @@ def main() -> None:
         print(f"  {skipped_seen} already-seen domains skipped at source (never counted against the cap).")
     if failed:
         print(f"  {len(failed)} cities failed all retries (NOT ledgered, will retry next fire): {failed}")
+    if total_unresolved:
+        print(f"  {total_unresolved} name-only businesses captured for Stage 2.5 to resolve.")
     remaining = len([c for c in wanted if c not in fired and c not in completed and c not in failed])
     print(f"  {remaining} requested cities left un-sourced (future fires walk them in order).")
-    if not total:
-        sys.exit("ABORT: 0 usable candidates sourced (all queries failed or no website-tagged hotels).")
+    code, msg = sweep_outcome(total, total_unresolved, len(completed), skipped_seen)
+    if code:
+        print(msg)
+        sys.exit(code)
 
 
 if __name__ == "__main__":
