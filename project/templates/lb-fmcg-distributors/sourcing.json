@@ -1,1 +1,29 @@
-{"selector": "\"office\"=\"company\"", "vertical": "fmcg", "max_per_run": 350}
+{
+  "_comment": "map = this campaign's original OSM config, unchanged. places = added 2026-08-10 so a swept OSM ledger no longer means a zero-candidate fire. See templates/README.md 'Places sources' for the Table A / budget / ledger-scoping rules that govern every fixture's places block.",
+  "max_per_run": 350,
+  "sources": [
+    {
+      "type": "map",
+      "targets": [
+        {
+          "selector": "\"office\"=\"company\"",
+          "vertical": "fmcg"
+        }
+      ]
+    },
+    {
+      "type": "places",
+      "max_requests": 150,
+      "targets": [
+        {
+          "included_type": "wholesaler",
+          "vertical": "fmcg-lb"
+        },
+        {
+          "included_type": "manufacturer",
+          "vertical": "fmcg-lb"
+        }
+      ]
+    }
+  ]
+}

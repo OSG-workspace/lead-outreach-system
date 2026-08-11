@@ -1,1 +1,19 @@
-{"selector": "\"office\"=\"lawyer\"", "vertical": "law", "max_per_run": 350}
+{
+  "_comment": "US law firms. map = the original OSM selector, unchanged. places = added 2026-08-10 so a swept OSM ledger no longer means a zero-candidate fire. See templates/README.md 'Places sources' for the Table A / budget / ledger-scoping rules that govern every fixture's places block.",
+  "max_per_run": 350,
+  "sources": [
+    {
+      "type": "map",
+      "targets": [
+        {"selector": "\"office\"=\"lawyer\"", "vertical": "law"}
+      ]
+    },
+    {
+      "type": "places",
+      "max_requests": 150,
+      "targets": [
+        {"included_type": "lawyer", "vertical": "law-us"}
+      ]
+    }
+  ]
+}
