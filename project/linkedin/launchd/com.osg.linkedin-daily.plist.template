@@ -8,19 +8,22 @@
     <!-- launchd, NOT cron. Three reasons that matter here:
          * cron on macOS runs outside the GUI session, so it cannot open the
            Chrome window the senders attach to;
-         * cron needs Full Disk Access to read anything under ~/Desktop, which
-           this project lives in — it fails silently without it;
+         * cron needs Full Disk Access to read anything under a TCC-protected
+           folder (~/Desktop, ~/Documents, ~/Downloads) — it fails silently;
          * cron.txt in this folder was never installed anyway, and its sender
            lines called flock(1), which macOS does not ship. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
+        <string>__BASH__</string>
         <string>__LINKEDIN_DIR__/scripts/autopilot.sh</string>
         <string>--live</string>
     </array>
 
-    <key>WorkingDirectory</key>
-    <string>__LINKEDIN_DIR__</string>
+    <!-- No WorkingDirectory on purpose. autopilot.sh does `cd $(dirname $0)/..`
+         itself, so setting one here is redundant — and actively harmful when the
+         checkout is under a TCC-protected folder: launchd still chdir()s there,
+         but the process cannot stat it, so every child starts with
+         `getcwd: Operation not permitted` and a broken cwd. Verified 2026-08-11. -->
 
     <!-- 09:10, Monday to Friday. The senders pace themselves across the
          09:15-17:30 window and re-derive the ramp themselves, so starting the
@@ -34,10 +37,19 @@
         <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>10</integer></dict>
     </array>
 
+    <!-- The log lives OUTSIDE the checkout, under ~/Library/Logs, and that is
+         load-bearing. launchd opens these two paths BEFORE it execs anything. If
+         they sit in a TCC-protected folder it cannot open them, so the job dies
+         at EX_CONFIG (78) having produced no output anywhere — the failure is
+         completely invisible, which is how this channel went dead for four
+         weekday runs after the checkout moved into ~/Downloads (2026-08-05 to
+         2026-08-11). ~/Library/Logs is always writable, so a failure now always
+         leaves a trace. `state/daily.log` is symlinked here by install.sh, so
+         the documented `tail -f state/daily.log` still works. -->
     <key>StandardOutPath</key>
-    <string>__LINKEDIN_DIR__/state/daily.log</string>
+    <string>__LOGFILE__</string>
     <key>StandardErrorPath</key>
-    <string>__LINKEDIN_DIR__/state/daily.log</string>
+    <string>__LOGFILE__</string>
 
     <key>EnvironmentVariables</key>
     <dict>
