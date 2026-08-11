@@ -435,24 +435,70 @@ def test_busy_site_is_high():
         '<script>fbq("init","1");</script>'
         '<script src="https://widget.intercom.io/widget/abc"></script>'
     )
-    tier, score, evidence, signals = detect_traffic(html, [f"p{i}" for i in range(8)], 6)
+    tier, _, evidence, signals = detect_traffic(html, [f"p{i}" for i in range(8)], 6)
     assert tier == "high"
-    assert score >= 55
     assert "1500 reviews" in evidence
     assert signals == sorted(signals)
 
 
 def test_quiet_site_is_low():
-    tier, score, _, _ = detect_traffic(_pad("<p>welcome to our small shop</p>"), ["index"], 0)
+    tier, _, _, _ = detect_traffic(_pad("<p>welcome to our small shop</p>"), ["index"], 0)
     assert tier == "low"
-    assert score < 25
 
 
-def test_middling_site_is_medium():
-    html = _pad('{"reviewcount":60}<script src="https://www.googletagmanager.com/gtag/js?id=g-x"></script>')
-    tier, score, _, _ = detect_traffic(html, ["index", "contact"], 0)
+# --- Boundary-pinning tests -------------------------------------------------
+#
+# These pin TIER_HIGH_MIN (38) and TIER_MEDIUM_MIN (22) against LITERAL score
+# values, not the constants themselves (asserting `score >= TIER_HIGH_MIN`
+# would be self-fulfilling and could never catch a threshold drift). If a
+# future recalibration changes either constant, these fixtures' scores stay
+# fixed, so the tier they land in changes and the test fails loudly.
+#
+# Score parity note: every point contribution in this module is an even
+# number — review buckets are 10/20/30/40, each tracker vendor is worth 8
+# (capped at 30), and the four operational-load weights are 10/8/6/6 (capped
+# at 30) — so any achievable `score` is even. The literal one-below-threshold
+# probes therefore use 36 and 20 (the nearest achievable scores below 38 and
+# 22) rather than the odd values 37/21, which no combination of real signals
+# can ever produce.
+
+def test_score_38_is_the_high_tier_boundary():
+    """100+ reviews (30 pts) + exactly one tracker vendor (8 pts) = 38."""
+    html = _pad('{"reviewcount":150}gtm-abc1234')
+    tier, score, _, _ = detect_traffic(html, ["p0"], 0)
+    assert score == 38
+    assert tier == "high"
+
+
+def test_score_36_is_still_medium_just_below_the_high_boundary():
+    """25-99 reviews (20) + one tracker (8) + multilang (8) = 36, one below 38."""
+    html = _pad(
+        '{"reviewcount":60}gtm-abc1234'
+        '<link rel="alternate" hreflang="en" href="/en">'
+        '<link rel="alternate" hreflang="fr" href="/fr">'
+    )
+    tier, score, _, _ = detect_traffic(html, ["p0"], 0)
+    assert score == 36
     assert tier == "medium"
-    assert 25 <= score < 55
+
+
+def test_score_22_is_the_medium_tier_boundary():
+    """chat widget (10) + many_pages (6) + multi_branch (6) = 22, no reviews/trackers."""
+    html = _pad('<script src="https://widget.intercom.io/widget/abc"></script>')
+    tier, score, _, _ = detect_traffic(html, [f"p{i}" for i in range(6)], 5)
+    assert score == 22
+    assert tier == "medium"
+
+
+def test_score_20_is_low_just_below_the_medium_boundary():
+    """multilang (8) + many_pages (6) + multi_branch (6) = 20, one below 22."""
+    html = _pad(
+        '<link rel="alternate" hreflang="en" href="/en">'
+        '<link rel="alternate" hreflang="fr" href="/fr">'
+    )
+    tier, score, _, _ = detect_traffic(html, [f"p{i}" for i in range(6)], 5)
+    assert score == 20
+    assert tier == "low"
 
 
 def test_score_never_exceeds_100():
@@ -515,8 +561,10 @@ def test_report_mode_prints_distribution(tmp_path):
             'https://www.googletagmanager.com/gtag/js?id=g-x '
             'https://widget.intercom.io/widget/abc') + ("<p>text</p>" * 400)
     quiet = "<p>a small quiet shop</p>" * 400
-    (raw / "busy-com__index.html").write_text(busy)
-    (raw / "quiet-com__index.html").write_text(quiet)
+    # Filenames must match what fetch_html.py really writes: the domain
+    # verbatim, dots and hyphens intact, then "__{slug}.html".
+    (raw / "busy.com__index.html").write_text(busy)
+    (raw / "quiet.com__index.html").write_text(quiet)
     (tmp_path / "candidates-all.txt").write_text(
         "busy.com|Busy|ES|hotel|0\nquiet.com|Quiet|ES|hotel|0\n"
     )
@@ -531,10 +579,35 @@ def test_report_mode_prints_distribution(tmp_path):
     assert "hotel" in r.stdout
 
 
+def test_report_mode_keeps_hyphenated_domains_intact(tmp_path):
+    """A hyphenated domain must match its candidates-all.txt row.
+
+    Regression: the report keyed pages by domain.replace("-", "."), turning
+    my-hotel.com into my.hotel.com, which matched no candidate row. Measured,
+    40/161 domains in 2026-08-01-eu-hotels fell into a bogus vertical=unknown
+    bucket with branches=0 because of it.
+    """
+    raw = tmp_path / "raw_html"
+    raw.mkdir()
+    (raw / "my-hotel.com__index.html").write_text("<p>rooms</p>" * 400)
+    (tmp_path / "candidates-all.txt").write_text("my-hotel.com|My Hotel|ES|hotel|0\n")
+
+    r = subprocess.run(
+        [_sys.executable, str(SCRIPT), "--report", str(tmp_path), "--json"],
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert payload["total"] == 1
+    # The domain resolved to its real vertical, not the unknown fallback.
+    assert "hotel" in payload["by_vertical"]
+    assert "unknown" not in payload["by_vertical"]
+
+
 def test_report_mode_json_output(tmp_path):
     raw = tmp_path / "raw_html"
     raw.mkdir()
-    (raw / "x-com__index.html").write_text("<p>hello</p>" * 400)
+    (raw / "x.com__index.html").write_text("<p>hello</p>" * 400)
     (tmp_path / "candidates-all.txt").write_text("x.com|X|ES|hotel|0\n")
 
     r = subprocess.run(

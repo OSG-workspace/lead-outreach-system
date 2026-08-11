@@ -170,7 +170,7 @@ Sub-agents: name-finder is **Haiku** (high-volume lookup work); the three writer
 | Skip `modern_booking` signal | always (gap already solved) | `extract_leads.py` |
 | Per-run gate (e.g. hotel size ≥ medium) | `<run>/qualify.json` | `qualify_leads.py` |
 | Enrichment queue ordered by traffic tier | always, all campaigns, no config | `qualify_leads.py` |
-| Traffic floor (per-campaign, opt-in) | `<run>/qualify.json` `min_traffic_tier`; `unknown` exempt; drops NOT ledgered | `qualify_leads.py` |
+| Traffic floor (per-campaign, opt-in) | `<run>/qualify.json` `min_traffic_tier`; `unknown` exempt (near-empty-HTML fetches only, 0.6% of domains measured — NOT partial fetches, which silently drop a tier for ~17.7% and get no protection); drops NOT ledgered | `qualify_leads.py` |
 | Decision-maker DIRECT email required | generic mailboxes never sent | `name-finder` + `enrich_contact_person.py --merge` |
 | Phone/WhatsApp enrichment | **OPT-IN** (`--enrich-phone`, only when WhatsApp on) | `enrich_contact_person.py`, `name-finder.md` |
 | Enrich cap (top-N by fit) | **`ENRICH_MAX_LEADS`, default 250** (safety ceiling; per-run `enrich_cap.txt` overrides) — see §7 | `qualify_leads.py` |

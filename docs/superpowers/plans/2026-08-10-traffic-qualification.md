@@ -4,7 +4,7 @@
 
 **Goal:** Score how busy each business actually is, using HTML the pipeline already fetched, and use that score to order the scarce Stage 5.5 enrichment slots on every campaign — with an optional per-campaign floor that drops clearly-dead sites.
 
-**Architecture:** A new pure module `traffic_signals.py` exposes three small detectors (review counts, tracker-stack depth, operational load) composed by one public `detect_traffic()`. `extract_leads.py` calls it once per domain and writes four additive fields onto each lead. `qualify_leads.py` uses those fields as the leading sort key for all runs, plus an opt-in `min_traffic_tier` floor read from `<run>/qualify.json`.
+**Architecture:** A new pure module `traffic_signals.py` exposes three small detectors (review counts, tracker-stack depth, operational load) composed by one public `detect_traffic()`. `extract_leads.py` calls it once per domain and writes four additive fields onto each lead. `qualify_leads.py` uses those fields as a **tie-break sort key** for all runs (below `-score` and `CLASS_RANK` — deliberately reversed from the leading-sort-key design this plan originally called for, per the 2026-08-10 amendment in the design spec's Architecture section: the enrichment cross-tab available at ship time, n=37 one vertical, ran the wrong way), plus an opt-in `min_traffic_tier` floor read from `<run>/qualify.json` that no fixture currently sets.
 
 **Tech Stack:** Python 3.14 (`project/tools/venv/bin/python`), pytest 9.0.3, stdlib only — `re`, `json`, `pathlib`, `argparse`. No new dependency.
 

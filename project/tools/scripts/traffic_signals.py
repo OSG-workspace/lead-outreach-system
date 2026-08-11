@@ -208,8 +208,18 @@ def detect_operational_load(
 
 # Below this many characters of concatenated page text we cannot judge the
 # business at all. That state is `unknown`, which is NEVER dropped — a site we
-# failed to crawl is our fetch failing, not a quiet business. Lifetime
-# fetch->extract survival is 50.7% (16,572/32,681), so this case is common.
+# failed to crawl is our fetch failing, not a quiet business.
+#
+# CORRECTED 2026-08-10: `unknown` only catches the near-empty-HTML band. A
+# domain whose fetch fails ENTIRELY produces no HTML and is dropped earlier,
+# at extract_leads.py:295-296, before detect_traffic ever runs — so this
+# threshold never sees total fetch failure. Measured against
+# 2026-08-01-eu-hotels: `unknown` covered 1/161 domains (0.6%). The common
+# failure mode is a PARTIAL fetch (most pages return, one times out), which
+# still produces plenty of HTML and lands in `low`/`medium` with NO
+# protection — measured across three run folders, 70/396 domains (17.7%)
+# drop a full tier from losing a single page, mostly via `many_pages`. Do not
+# treat this threshold as covering fetch reliability in general; it does not.
 MIN_HTML_FOR_JUDGMENT = 2_000
 
 # Review-count -> points. Buckets, not a curve: the raw number is noisy
@@ -350,7 +360,13 @@ def _report(run_dir, as_json: bool) -> int:
 
     pages_by_domain: dict[str, list[_Path]] = {}
     for f in sorted(raw.glob("*.html")):
-        domain = f.name.split("__", 1)[0].replace("-", ".")
+        # fetch_html.py names files "{domain}__{slug}.html" and only replaces
+        # "/" in the domain, so dots AND hyphens survive verbatim. An earlier
+        # .replace("-", ".") here corrupted every hyphenated domain
+        # (my-hotel.com -> my.hotel.com), which then matched nothing in
+        # candidates-all.txt: measured, 40/161 domains in 2026-08-01-eu-hotels
+        # fell into a bogus vertical=unknown bucket with branches=0.
+        domain = f.name.split("__", 1)[0]
         pages_by_domain.setdefault(domain, []).append(f)
 
     tiers: Counter[str] = Counter()

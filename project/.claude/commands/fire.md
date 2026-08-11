@@ -125,7 +125,11 @@ COMBINED_CUSTOM=0
 echo "Pre-flight path: draft=$DRAFT_MODE email=$EMAIL_ENABLED wa=$WA_ENABLED combined=$COMBINED_CUSTOM"
 
 # --- core scripts every run needs (Stages 3-8) ---
+# traffic_signals.py is a HARD import dependency of extract_leads.py (Stage 5).
+# Without it in this list a checkout missing the file passes pre-flight and then
+# dies mid-run with ModuleNotFoundError instead of aborting cleanly here.
 for s in merge_candidates.py fetch_html.sh extract_leads.py qualify_leads.py \
+         traffic_signals.py \
          enrich_contact_person.py send_batch_brevo.py persist_sent_log.py email_template.py; do
     [ -f "$PROJ/project/tools/scripts/$s" ] || ABORT "missing core script tools/scripts/$s"
 done
