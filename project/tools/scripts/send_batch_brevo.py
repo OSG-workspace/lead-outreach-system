@@ -263,6 +263,25 @@ def main() -> None:
     failed = sum(1 for r in rows if r["result"] == "failed")
     print(f"\nDONE: attempted={len(rows)} sent={sent} failed={failed} mode={mode}")
 
+    # A failed batch must HALT the run, not be reported as success.
+    #
+    # ARCHITECTURE.md has always promised "Brevo 401/402/429 -> ABORT, never
+    # persist". Only the second half was true: persist_sent_log.py skips
+    # result != "sent", so the vault stayed clean — but this function fell off
+    # the end and exited 0, so run_fire.py ran Stage 8 and printed
+    # "DONE ... sent+persisted" having sent NOTHING. An operator reading that
+    # line, or the status file, had no way to tell a full send from a total
+    # failure. That is the worst kind of bug in an outreach pipeline: it is
+    # silent, and it looks exactly like success.
+    #
+    # Exit 6 is untolerated by run_fire.sh(), so the run aborts loudly here.
+    if failed:
+        print(f"ABORT: {failed} of {len(rows)} email(s) failed at the Brevo API "
+              f"(see the 'error' field in emails-sent.jsonl and the batch log "
+              f"above). Nothing was persisted to the sent-log — these leads stay "
+              f"uncontacted and can be re-sent once the cause is fixed.")
+        raise SystemExit(6)
+
 
 if __name__ == "__main__":
     main()

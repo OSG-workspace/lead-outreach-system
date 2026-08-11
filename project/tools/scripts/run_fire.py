@@ -182,6 +182,40 @@ def resolve_sourcing(run: Path) -> dict:
     return cfg
 
 
+def _send_outcome(run: Path, email_on: bool) -> str:
+    """What the run ACTUALLY sent, read from emails-sent.jsonl.
+
+    Never assert "sent+persisted" from the mere fact that the send stage ran.
+    Two states used to be indistinguishable from that line: a real send, and a
+    run whose every draft was suppressed at send time (already in the sent-log
+    or bounce-list), which writes no send log at all and exits 0.
+    """
+    if not email_on:
+        return "(no email channel)"
+    log = run / "emails-sent.jsonl"
+    if not log.exists():
+        return "sent 0 (nothing left after suppression) — nothing persisted"
+    sent = failed = 0
+    for line in log.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue
+        if r.get("result") == "sent":
+            sent += 1
+        elif r.get("result") == "failed":
+            failed += 1
+    if failed:
+        # Defensive, and unreachable on a normal run: Stage 7 returns 6 on any
+        # failure and die() exits before this line. It exists so the DONE line
+        # stays truthful if that tolerance is ever widened, and so this function
+        # is correct read on its own.
+        return f"sent {sent}, FAILED {failed} — only the {sent} sent were persisted"
+    return f"sent {sent}, persisted"
+
+
 def slug_base_of(slug: str) -> str:
     """`2026-07-27-lb-insurance-tpa-1` -> `lb-insurance-tpa` (the fixture name)."""
     base = _re.sub(r"^\d{4}-\d{2}-\d{2}-", "", slug)
@@ -360,6 +394,17 @@ def main():
     # "0 leads with resolved contact + direct email" — an email condition
     # killing a channel that needs no email.
     li_only = li_on and not email_on and not wa_on
+    # The same argument for WhatsApp-only runs (e.g. lb-enterprise,
+    # channels.json = ["whatsapp"]). Without this they took the EMAIL path and
+    # died three ways: enrich dropped every lead whose decision-maker publishes
+    # no direct email — on a run that never sends email — then draft_custom.py
+    # burned one Sonnet gap-writer per surviving lead to produce an
+    # emails-drafted.json that draft_whatsapp_custom.py does not read, and
+    # finally exited 5 when that email drafter had nothing left, aborting the
+    # whole run. WhatsApp still needs enrichment (it wants the person's NAME and
+    # MOBILE), so unlike li_only this keeps Stage 5.5 and only removes the
+    # email-shaped parts of it.
+    wa_only = wa_on and not email_on and not li_on
     combined_custom = (draft_mode == "custom" and email_on and not wa_on)
     # A non-map source carries its verticals on its TARGETS (places) or on the
     # source itself (directory). Reading only the source-level key printed
@@ -454,7 +499,12 @@ def main():
         sh(["bash", "tools/scripts/fetch_html.sh", str(run)], "Stage 4 fetch")
         ecmd = ["python3", "tools/scripts/extract_leads.py", "--run-dir", str(run),
                 "--sent-log", SENT_LOG]
-        if li_only:
+        # A run whose only channel is not email must not have its leads deleted
+        # at extract for lacking a mailbox. WhatsApp reaches a MOBILE, so a
+        # business with a phone and no published address is a perfectly good
+        # lead — but extract_leads.py drops it outright without this flag, which
+        # meant the wa_only rescue at Stage 5.5 never saw those leads at all.
+        if li_only or wa_only:
             ecmd.append("--allow-no-email")
         sh(ecmd, "Stage 5 extract")
         if not PLAN and count_lines(run / "leads-extracted.json") == 0:
@@ -465,6 +515,16 @@ def main():
         qcmd = ["python3", "tools/scripts/qualify_leads.py", "--run-dir", str(run)]
         if li_only:
             qcmd.append("--linkedin-run")
+        elif wa_only:
+            # Same reasoning as li_only. Without this a WhatsApp-only lead whose
+            # only found address is freemail is dropped "freemail-only" AND
+            # written to the PERMANENT disqualified-log, which blocks that
+            # business from every future run on every channel — over a mailbox
+            # this run was never going to use. qualify_leads.py's own comment
+            # says an email verdict "is not evidence about the business" and
+            # "must never reach the PERMANENT ledger"; that protection existed
+            # only for LinkedIn.
+            qcmd.append("--no-email-channel")
         if needed_q:
             qcmd += ["--cap", str(needed_q)]   # the target-derived need IS the cap (top-N by fit)
         # exit 7 = nothing sourced this run qualified. Tolerated between waves
@@ -610,14 +670,24 @@ def main():
                 include={"phone"} if wa_on else None)
         merge = ["python3", "tools/scripts/enrich_contact_person.py", "--phase", "merge",
                  "--run-dir", str(run)]
-        if wa_fallback:
+        # A WhatsApp-ONLY run must always keep phone-reachable leads: requiring a
+        # direct EMAIL on a channel that sends none is the gate that used to
+        # empty these runs. `wa_fallback` covers the explicit
+        # "whatsapp-fallback" channel; wa_only covers a plain ["whatsapp"].
+        if wa_fallback or wa_only:
             merge.append("--wa-fallback")
         sh(merge, "Stage 5.5 enrich merge")
         if not PLAN and count_lines(run / "leads-with-contact.json") == 0:
-            die("Stage 5.5", "0 leads with resolved contact + direct email")
+            die("Stage 5.5", "0 leads with a resolved decision-maker"
+                             + ("" if wa_only else " + direct email"))
 
         # Step 7 draft
-        if draft_mode == "custom":   # custom + WhatsApp path (gap-writer)
+        if wa_only:
+            # draft_whatsapp_custom.py reads leads-with-contact.json directly, so
+            # an email drafter here produces a file with no consumer.
+            print("  WhatsApp-only run: skipping the email drafter "
+                  "(Stage 8.5 writes the messages from leads-with-contact.json).")
+        elif draft_mode == "custom":   # custom + WhatsApp path (gap-writer)
             sh(["python3", "tools/scripts/draft_custom.py", "--phase", "prep",
                 "--run-dir", str(run)], "Stage 6 gap prep")
             gbatches = sorted(run.glob("gap-batch-*.txt"))
@@ -648,10 +718,25 @@ def main():
         cap = os.environ.get("MAX_EMAILS_PER_RUN", "1000")
         if target:
             cap = str(min(int(cap), target))   # outreach exactly the asked-for volume
-        sh(["python3", "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
-            "--send", "--cap", cap], "Stage 7 send")
+        # rc=6 means "some emails failed at the Brevo API". It must NOT skip
+        # Stage 8. On a PARTIAL failure (batch 1 of 3 sends, batch 2 fails)
+        # Brevo really did deliver those first messages, and if we abort before
+        # persisting them they never reach sent-log.md — so a later fire happily
+        # re-contacts people we already mailed. That is worse than the reporting
+        # bug rc=6 was added to fix, and it breaks CLAUDE.md's flat guarantee
+        # that "every email is logged to sent-log.md after the send call fires".
+        # persist_sent_log.py only writes rows with result == "sent", so running
+        # it here records exactly what went out and nothing more. THEN we fail
+        # the run.
+        send_rc = sh(["python3", "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
+                      "--send", "--cap", cap], "Stage 7 send", tolerate=(6,))
         sh(["python3", "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
             "--sent-log", SENT_LOG], "Stage 8 persist")
+        if send_rc == 6:
+            die("Stage 7 send", "Brevo rejected one or more emails — the messages that "
+                                "DID send are persisted to the sent-log, the rest stay "
+                                "uncontacted and can be re-sent once the cause is fixed "
+                                "(see the 'error' field in emails-sent.jsonl)", 6)
     elif email_on:
         print("\n[DRY-RUN] drafts written; send + persist skipped.")
 
@@ -838,10 +923,14 @@ def main():
             tgt += f" (SHORT: {drafted}/{target} drafted after enrich/draft attrition)"
     if dry_sources:
         tgt += f" [no-fresh-ground: {','.join(dry_sources)}]"
-    status(f"DONE — qualified={qualified} drafted={drafted}{tgt} "
-           f"{'(dry-run, nothing sent)' if a.dry_run else 'sent+persisted'}")
-    print(f"\nDONE: {a.slug} — qualified={qualified} drafted={drafted}{tgt} "
-          f"{'(dry-run, nothing sent)' if a.dry_run else 'sent+persisted'}")
+
+    # Report what was ACTUALLY sent, counted from the send log — never a blanket
+    # "sent+persisted". The old line asserted success for any non-dry run, so a
+    # run where every draft was suppressed (all already in sent-log/bounce-list)
+    # reported identically to a run that really mailed 300 people.
+    outcome = "(dry-run, nothing sent)" if a.dry_run else _send_outcome(run, email_on)
+    status(f"DONE — qualified={qualified} drafted={drafted}{tgt} {outcome}")
+    print(f"\nDONE: {a.slug} — qualified={qualified} drafted={drafted}{tgt} {outcome}")
 
 
 if __name__ == "__main__":

@@ -55,6 +55,10 @@ if _os.environ.get("FETCH_PAGES") == "full":
     ]
 
 MIN_HTML_LEN = 500
+# Below this share of domains yielding ANY page, the fetch is probably broken
+# rather than the market being thin. Warn, never halt — see the note at the
+# yield check in run() for why a hard gate here would cost more than it saves.
+FETCH_YIELD_WARN_PCT = float(os.environ.get("FETCH_YIELD_WARN_PCT", "40"))
 CONCURRENCY = int(os.environ.get("FETCH_CONCURRENCY", "12"))
 PAGE_TIMEOUT_MS = int(os.environ.get("FETCH_PAGE_TIMEOUT_MS", "25000"))
 # Hard per-page wall-clock guard so one hung page can't stall the whole run.
@@ -134,6 +138,24 @@ async def run(run_dir: Path) -> int:
     total_pages = len(list(out_dir.glob("*.html")))
     print(f"Fetched {written} new pages (crawl4ai JS-render). "
           f"raw_html now holds {total_pages} pages across {distinct}/{len(domains)} domains -> {out_dir}")
+
+    # Domain-yield health. ARCHITECTURE.md long claimed Stage 4 "halts if <40%
+    # of domains yielded a page"; no such check existed anywhere, so a collapsed
+    # fetch looked identical to a healthy one and only showed up later as a thin
+    # extract. This WARNS rather than halts, deliberately: lifetime
+    # fetch->extract survival is 50.7% and ranges 39-82% across real runs, so a
+    # hard gate at 40% would abort legitimate runs in weakly-mapped markets and
+    # throw away sourcing that already cost real work. The operator gets the
+    # signal; the run keeps its leads.
+    if domains:
+        pct = 100.0 * distinct / len(domains)
+        if pct < FETCH_YIELD_WARN_PCT:
+            print(f"WARN: only {distinct}/{len(domains)} domains ({pct:.0f}%) yielded any "
+                  f"page, below the {FETCH_YIELD_WARN_PCT:.0f}% health line. Everything "
+                  f"downstream is capped by this. Usual causes: network/DNS trouble, a "
+                  f"crawl4ai/playwright browser that failed to start, or bulk-blocked "
+                  f"requests. Check a couple of these domains by hand before trusting "
+                  f"this run's yield.")
     return 0
 
 

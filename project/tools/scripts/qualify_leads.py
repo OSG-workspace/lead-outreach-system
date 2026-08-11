@@ -45,8 +45,12 @@ p.add_argument("--min-score", type=int, default=int(os.environ.get("QUALIFY_MIN_
 #      reason. Without this a LinkedIn run would blacklist a company from every
 #      FUTURE email campaign purely for not publishing an address — a permanent
 #      loss caused by a channel that never needed the address.
-p.add_argument("--linkedin-run", action="store_true",
-               help="exempt email-quality gates and never blacklist for email reasons")
+p.add_argument("--linkedin-run", "--no-email-channel", dest="linkedin_run",
+               action="store_true",
+               help="this run's outreach channel is not email, so exempt the "
+                    "email-quality gates and never blacklist for an email reason. "
+                    "Use --no-email-channel for WhatsApp-only runs; --linkedin-run "
+                    "is the original spelling, kept working for LinkedIn fires.")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()

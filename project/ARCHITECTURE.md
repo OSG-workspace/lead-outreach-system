@@ -102,8 +102,8 @@ Sub-agents: name-finder is **Haiku** (high-volume lookup work); the three writer
 |---|---|---|---|---|
 | 1 | Bootstrap | orchestrator (CLAUDE.md router → fire.md) | `runs/<slug>/` with control files | template missing |
 | 2 | Source | ONE stage, deterministic enumeration from `sourcing.json`: `map` → `source_overpass.py` (OSM) · `places` → `source_places.py`. **Zero agents, zero tokens.** | `candidates-batch-*.txt` | all Overpass mirrors fail |
-| 3 | Merge+dedup | `merge_candidates.py` | `candidates-all.txt` | <50 merged |
-| 4 | Fetch HTML | `fetch_html.sh` (crawl4ai, multi-page) | `raw_html/{domain}__{slug}.html` | <40% domains yielded a page |
+| 3 | Merge+dedup | `merge_candidates.py` | `candidates-all.txt` | **0** merged (a count under 50 only prints a NOTE — it does not halt) |
+| 4 | Fetch HTML | `fetch_html.sh` (crawl4ai, multi-page) | `raw_html/{domain}__{slug}.html` | never halts; **WARNs** below 40% domain yield (`FETCH_YIELD_WARN_PCT`) |
 | 5 | Extract+score | `extract_leads.py` | `leads-extracted.json` | 0 extracted |
 | 5.3 | **Qualify+cap** | `qualify_leads.py` | `leads-qualified.json` | 0 qualified |
 | 5.5 | **Enrich decision-maker** | **name-finder** (1/lead) → `enrich_contact_person.py --merge` | `leads-with-contact.json` | 0 with name+gender+direct email |
@@ -175,7 +175,9 @@ Sub-agents: name-finder is **Haiku** (high-volume lookup work); the three writer
 | Phone/WhatsApp enrichment | **OPT-IN** (`--enrich-phone`, only when WhatsApp on) | `enrich_contact_person.py`, `name-finder.md` |
 | Enrich cap (top-N by fit) | **`ENRICH_MAX_LEADS`, default 250** (safety ceiling; per-run `enrich_cap.txt` overrides) — see §7 | `qualify_leads.py` |
 | Send cap | `MAX_EMAILS_PER_RUN` env (default 1000) | `send_batch_brevo.py` |
-| Brevo 401/402/429 → ABORT, never persist | always | `send_batch_brevo.py` |
+| Brevo send failure → ABORT (exit 6), never persist | always. Fixed 2026-08-11: this was documented but only half-true — failures were recorded as `result: "failed"` and the script exited **0**, so the run printed `DONE … sent+persisted` having sent nothing. The DONE line now reports the real count from `emails-sent.jsonl` | `send_batch_brevo.py`, `run_fire._send_outcome` |
+| Channel-only runs skip the gates of channels they don't use | `li_only` (LinkedIn) and `wa_only` (WhatsApp) — a WhatsApp-only run gets `--wa-fallback` and skips the email drafter, instead of being emptied by a direct-email requirement it never needed | `run_fire.py` |
+| A map sweep yielding only NAME-ONLY rows is success, not failure | exit 8 (no fresh ground) vs exit 1 (anomalous), decided by `sweep_outcome()`. Name-only rows are yield: Stage 2.5 resolves them | `source_overpass.py`, `source_places.py` |
 | Kill on any fallback | always | `/fire` orchestrator |
 
 ---
