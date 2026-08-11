@@ -58,7 +58,7 @@ MIN_HTML_LEN = 500
 # Below this share of domains yielding ANY page, the fetch is probably broken
 # rather than the market being thin. Warn, never halt — see the note at the
 # yield check in run() for why a hard gate here would cost more than it saves.
-FETCH_YIELD_WARN_PCT = 40.0
+FETCH_YIELD_WARN_PCT = float(os.environ.get("FETCH_YIELD_WARN_PCT", "40"))
 CONCURRENCY = int(os.environ.get("FETCH_CONCURRENCY", "12"))
 PAGE_TIMEOUT_MS = int(os.environ.get("FETCH_PAGE_TIMEOUT_MS", "25000"))
 # Hard per-page wall-clock guard so one hung page can't stall the whole run.

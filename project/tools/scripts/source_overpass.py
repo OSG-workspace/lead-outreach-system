@@ -590,7 +590,15 @@ def main() -> None:
     completed: list[str] = []
     failed: list[str] = []
     for city in todo:
-        if a.auto and total >= a.max_candidates:
+        # Yield is website-tagged rows PLUS name-only rows, exactly as
+        # sweep_outcome() judges it — source_places.py:478 already caps this way.
+        # Counting only `total` meant the cap never tripped on a weakly-mapped
+        # market: 2026-08-09-au-trades produced 50 website-tagged rows against
+        # 1,217 name-only, so --max-candidates silently stopped capping and the
+        # sweep walked every remaining city (a network round-trip plus a 1.5s
+        # courtesy sleep each) while handing Stage 2.5 an unbounded resolve
+        # backlog to pay for.
+        if a.auto and (total + total_unresolved) >= a.max_candidates:
             break
         res = candidates_for_city(city, places, selector, vertical, blocked_domains,
                                   blocked_slugs, capture_unresolved=a.capture_unresolved)

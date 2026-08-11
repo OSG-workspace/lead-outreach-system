@@ -208,6 +208,10 @@ def _send_outcome(run: Path, email_on: bool) -> str:
         elif r.get("result") == "failed":
             failed += 1
     if failed:
+        # Defensive, and unreachable on a normal run: Stage 7 returns 6 on any
+        # failure and die() exits before this line. It exists so the DONE line
+        # stays truthful if that tolerance is ever widened, and so this function
+        # is correct read on its own.
         return f"sent {sent}, FAILED {failed} — only the {sent} sent were persisted"
     return f"sent {sent}, persisted"
 
@@ -495,7 +499,12 @@ def main():
         sh(["bash", "tools/scripts/fetch_html.sh", str(run)], "Stage 4 fetch")
         ecmd = ["python3", "tools/scripts/extract_leads.py", "--run-dir", str(run),
                 "--sent-log", SENT_LOG]
-        if li_only:
+        # A run whose only channel is not email must not have its leads deleted
+        # at extract for lacking a mailbox. WhatsApp reaches a MOBILE, so a
+        # business with a phone and no published address is a perfectly good
+        # lead — but extract_leads.py drops it outright without this flag, which
+        # meant the wa_only rescue at Stage 5.5 never saw those leads at all.
+        if li_only or wa_only:
             ecmd.append("--allow-no-email")
         sh(ecmd, "Stage 5 extract")
         if not PLAN and count_lines(run / "leads-extracted.json") == 0:
@@ -506,6 +515,16 @@ def main():
         qcmd = ["python3", "tools/scripts/qualify_leads.py", "--run-dir", str(run)]
         if li_only:
             qcmd.append("--linkedin-run")
+        elif wa_only:
+            # Same reasoning as li_only. Without this a WhatsApp-only lead whose
+            # only found address is freemail is dropped "freemail-only" AND
+            # written to the PERMANENT disqualified-log, which blocks that
+            # business from every future run on every channel — over a mailbox
+            # this run was never going to use. qualify_leads.py's own comment
+            # says an email verdict "is not evidence about the business" and
+            # "must never reach the PERMANENT ledger"; that protection existed
+            # only for LinkedIn.
+            qcmd.append("--no-email-channel")
         if needed_q:
             qcmd += ["--cap", str(needed_q)]   # the target-derived need IS the cap (top-N by fit)
         # exit 7 = nothing sourced this run qualified. Tolerated between waves
@@ -699,10 +718,25 @@ def main():
         cap = os.environ.get("MAX_EMAILS_PER_RUN", "1000")
         if target:
             cap = str(min(int(cap), target))   # outreach exactly the asked-for volume
-        sh(["python3", "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
-            "--send", "--cap", cap], "Stage 7 send")
+        # rc=6 means "some emails failed at the Brevo API". It must NOT skip
+        # Stage 8. On a PARTIAL failure (batch 1 of 3 sends, batch 2 fails)
+        # Brevo really did deliver those first messages, and if we abort before
+        # persisting them they never reach sent-log.md — so a later fire happily
+        # re-contacts people we already mailed. That is worse than the reporting
+        # bug rc=6 was added to fix, and it breaks CLAUDE.md's flat guarantee
+        # that "every email is logged to sent-log.md after the send call fires".
+        # persist_sent_log.py only writes rows with result == "sent", so running
+        # it here records exactly what went out and nothing more. THEN we fail
+        # the run.
+        send_rc = sh(["python3", "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
+                      "--send", "--cap", cap], "Stage 7 send", tolerate=(6,))
         sh(["python3", "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
             "--sent-log", SENT_LOG], "Stage 8 persist")
+        if send_rc == 6:
+            die("Stage 7 send", "Brevo rejected one or more emails — the messages that "
+                                "DID send are persisted to the sent-log, the rest stay "
+                                "uncontacted and can be re-sent once the cause is fixed "
+                                "(see the 'error' field in emails-sent.jsonl)", 6)
     elif email_on:
         print("\n[DRY-RUN] drafts written; send + persist skipped.")
 
