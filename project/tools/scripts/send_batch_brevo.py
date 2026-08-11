@@ -216,9 +216,30 @@ def main() -> None:
     print(f"[{mode}] Sending {len(drafts)} emails via Brevo batch endpoint "
           f"({(len(drafts) + args.batch_size - 1) // args.batch_size} request(s) of up to {args.batch_size}).")
 
+    sender_address = env.get("BREVO_SENDER_ADDRESS", "")  # CAN-SPAM physical address (set in .env)
+
+    # Commercial email must carry a valid physical postal address. email_template
+    # renders the footer's address line ONLY when this is non-empty (see
+    # _footer(): `addr_line = ... if address else ""`), so an unset key ships a
+    # footer that is silently one required element short. The unsubscribe half of
+    # the contract is already handled (mailto link + List-Unsubscribe header);
+    # this is the half that has no fallback and cannot be invented here.
+    #
+    # WARN, never abort: four fixtures target US businesses where 15 U.S.C.
+    # 7704(a)(5) applies per message, but the operator may knowingly be sending
+    # into jurisdictions with different rules, and blocking a live send on a
+    # missing config key would cost more than it protects. The operator gets the
+    # signal on every live send until they set it.
+    if args.send and not sender_address:
+        print("WARN: BREVO_SENDER_ADDRESS is unset, so these emails ship with NO "
+              "physical postal address in the footer. US commercial email requires "
+              "one in every message (CAN-SPAM 15 U.S.C. 7704(a)(5)); the US "
+              "fixtures (us-law-firms, us-staffing, us-clinics, us-property) are "
+              "squarely in scope. Fix once: add BREVO_SENDER_ADDRESS=<full postal "
+              "address> to project/.env.", file=sys.stderr)
+
     rows: list[dict] = []
     with out_path.open("w") as out_f, log_path.open("w") as log_f:
-        sender_address = env.get("BREVO_SENDER_ADDRESS", "")  # CAN-SPAM physical address (set in .env)
         for chunk_idx, chunk in enumerate(chunked(drafts, args.batch_size), start=1):
             versions = [build_version(d, sender_address) for d in chunk]
             run_tag = run_dir.name
@@ -278,8 +299,11 @@ def main() -> None:
     if failed:
         print(f"ABORT: {failed} of {len(rows)} email(s) failed at the Brevo API "
               f"(see the 'error' field in emails-sent.jsonl and the batch log "
-              f"above). Nothing was persisted to the sent-log — these leads stay "
-              f"uncontacted and can be re-sent once the cause is fixed.")
+              f"above). The {sent} that DID send are real and reach the sent-log: "
+              f"run_fire.py runs Stage 8 persist before it fails the run, and "
+              f"persist_sent_log.py records only rows with result == 'sent'. The "
+              f"{failed} failed lead(s) stay uncontacted and can be re-sent once "
+              f"the cause is fixed.")
         raise SystemExit(6)
 
 
