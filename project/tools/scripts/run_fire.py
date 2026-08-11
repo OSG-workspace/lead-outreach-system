@@ -57,18 +57,23 @@ def die(stage: str, msg: str, code: int = 1):
     sys.exit(code)
 
 
-def sh(args: list[str], stage: str, tolerate: tuple[int, ...] = ()):
+def sh(args: list[str], stage: str, tolerate: tuple[int, ...] = (),
+       defer_fail: bool = False):
     """Run a pipeline script; abort the whole run on non-zero (kill-on-fallback).
     `tolerate` lists exit codes that are an expected mid-run state, not a
     fallback (e.g. qualify's rc=7 "0 qualified yet" between sourcing waves of a
-    --target-leads run). Returns the exit code."""
+    --target-leads run). `defer_fail` returns the code instead of aborting, so
+    the caller can die with a message only it can build (Stage 2 names the
+    sources the crash skipped). Returns the exit code."""
     print(f"\n=== {stage}: {' '.join(args)}")
     status(f"{stage} — running")
     if PLAN:
         return 0
     r = subprocess.run(args, cwd=str(PROJECT))
     if r.returncode != 0 and r.returncode not in tolerate:
-        die(stage, f"command exited {r.returncode}", r.returncode)
+        if not defer_fail:
+            die(stage, f"command exited {r.returncode}", r.returncode)
+        return r.returncode
     status(f"{stage} — done")
     return r.returncode
 
@@ -603,9 +608,25 @@ def main():
         # state, not a fallback. One dry source must not kill a run whose other
         # sources still have ground. If EVERY source is dry the run halts at the
         # Stage 3 "0 candidates after dedup" gate.
-        rc = sh(cmd, label, tolerate=(8,))
+        #
+        # Any OTHER non-zero code is a real crash and still halts the fire — but
+        # it halts having skipped every source queued behind it, and that is
+        # invisible from the abort line alone. On 2026-08-11-au-trades a dry OSM
+        # source exited 1 at [2/4] and silently pre-empted the Google Places
+        # source at [4/4] that held the campaign's entire supply; the abort read
+        # as "sourcing is exhausted" when sourcing had never been attempted.
+        # Naming the skipped sources turns that diagnosis into one line.
+        rc = sh(cmd, label, tolerate=(8,), defer_fail=True)
         if rc == 8:
             dry_sources.append(label_bit)
+        elif rc != 0:
+            skipped = [f"[{j}/{len(units)}] " + (u[1]["vertical"] if u[1]
+                       else (u[0].get("type") or "?"))
+                       for j, u in enumerate(units, 1) if j > i]
+            die(label, f"command exited {rc}. NOT a dry-source state (that is rc=8) — "
+                       f"this source crashed. Sources never reached because of it: "
+                       f"{', '.join(skipped) if skipped else 'none (this was the last)'}",
+                rc)
 
     # --- Stage 2.5: name -> own domain, VERIFIED ---
     # Opt-in per branch (`"resolve_domains": true`). OSM enumerates the ICP far

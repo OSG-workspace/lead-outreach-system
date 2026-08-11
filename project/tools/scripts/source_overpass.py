@@ -438,11 +438,11 @@ def candidates_for_city(city: str, places: dict, selector: str, vertical: str,
 
 
 def sweep_outcome(total: int, total_unresolved: int, cities_completed: int,
-                  skipped_seen: int) -> tuple[int, str]:
+                  skipped_seen: int, empty_cities: int = 0) -> tuple[int, str]:
     """Decide how a finished Overpass sweep should exit. -> (exit_code, message).
 
     exit 0 = produced yield; exit 8 = no fresh ground (an expected end state, so
-    a run's OTHER sources still carry it); exit 1 = anomalous, halt loudly.
+    a run's OTHER sources still carry it).
 
     This mirrors `sweep_outcome` in source_places.py, and exists because it
     previously did not. The old code was `if not total: sys.exit("ABORT: ...")`,
@@ -457,19 +457,31 @@ def sweep_outcome(total: int, total_unresolved: int, cities_completed: int,
         unresolved — that run was carried almost entirely by name-only rows.
       * "every city already swept" is the textbook no-fresh-ground state that
         exit 8 exists for, and it was also being reported as a hard failure.
+
+    NO DRY SWEEP EXITS 1 (2026-08-11). A sweep that returns nothing used to halt
+    the fire on the theory that an all-empty result proves a malformed selector.
+    It does not — it is equally what a sparse vertical or an out-of-region mirror
+    returns, and the caller cannot tell those apart. Meanwhile the cost of being
+    wrong was total: on 2026-08-11-au-trades, source [2/4] exited 1 over five
+    empty AU cities and killed the run before the Google Places source at [4/4]
+    — the one source that had ground — ever executed. The suspicion is still
+    worth printing, so it survives as a WARNING on an exit-8 path. A run where
+    EVERY source is dry still halts, at run_fire.py's Stage 3 "0 candidates after
+    dedup" gate, which is the gate that can actually see the whole picture.
     """
     if total or total_unresolved:
         return 0, ""
+    if empty_cities and cities_completed == 0:
+        return 8, (f"NO FRESH GROUND: attempted {empty_cities} city/cities and Overpass "
+                   f"returned nothing for each. Not ledgered, so they are retried next "
+                   f"fire. If this repeats for the same selector, check it is a valid "
+                   f"OSM tag expression and that the mirrors are up.")
     if cities_completed == 0:
         return 8, ("NO FRESH GROUND: every requested city is already swept for this "
                    "vertical. Add rows to places.txt, widen the selector, or pass "
                    "--ignore-ledger.")
-    if skipped_seen:
-        return 8, (f"NO FRESH GROUND: swept {cities_completed} city/cities; all "
-                   f"{skipped_seen} businesses found were already sourced or contacted.")
-    return 1, (f"ABORT: swept {cities_completed} city/cities and Overpass returned 0 "
-               f"businesses with a website tag and 0 name-only businesses. Check the "
-               f"selector is a valid OSM tag expression and that the mirrors are up.")
+    return 8, (f"NO FRESH GROUND: swept {cities_completed} city/cities; all "
+               f"{skipped_seen} businesses found were already sourced or contacted.")
 
 
 def main() -> None:
@@ -589,6 +601,7 @@ def main() -> None:
     skipped_seen = 0
     completed: list[str] = []
     failed: list[str] = []
+    empty: list[str] = []      # queried fine, returned nothing -> not ledgered, not "completed"
     for city in todo:
         # Yield is website-tagged rows PLUS name-only rows, exactly as
         # sweep_outcome() judges it — source_places.py:478 already caps this way.
@@ -618,7 +631,6 @@ def main() -> None:
         out = run / f"candidates-batch-{a.batch_prefix}-{batch_n:03d}.txt"
         out.write_text("\n".join(lines) + ("\n" if lines else ""))
         total += len(lines)
-        completed.append(city)
         # LEDGER ONLY WHAT WAS GENUINELY SEARCHED.
         #
         # This ledger is permanent: a city written here is never swept again, so
@@ -631,9 +643,20 @@ def main() -> None:
         # OVERPASS_MIRRORS note above), and what a partial or truncated
         # response looks like. Being wrong the safe way costs one repeated
         # query next fire; being wrong the other way costs the ground forever.
+        #
+        # `completed` uses the SAME definition, because sweep_outcome() reads it
+        # to choose exit 8 ("no fresh ground", other sources carry the run) over
+        # exit 1 ("selector is broken", halt the whole fire). Counting a city
+        # that returned nothing as "searched" made those two disagree: the
+        # ledger called the response meaningless while the exit code called it
+        # proof of a bad selector. Measured on 2026-08-11-au-trades — five AU
+        # cities returned nothing for craft~locksmith|glaziery|roofer, source
+        # [2/4] exited 1, and the Google Places source at [4/4] never ran.
         if lines or n_seen or unresolved:
+            completed.append(city)
             ledger_city(vertical, city, run_slug)
         else:
+            empty.append(city)
             print(f"  [{batch_n}] {city}: OSM returned NOTHING — NOT ledgered "
                   f"(an empty response is not an empty city; retried next fire)")
             time.sleep(1.5)
@@ -647,11 +670,13 @@ def main() -> None:
         print(f"  {skipped_seen} already-seen domains skipped at source (never counted against the cap).")
     if failed:
         print(f"  {len(failed)} cities failed all retries (NOT ledgered, will retry next fire): {failed}")
+    if empty:
+        print(f"  {len(empty)} cities returned an empty response (NOT ledgered, will retry next fire): {empty}")
     if total_unresolved:
         print(f"  {total_unresolved} name-only businesses captured for Stage 2.5 to resolve.")
     remaining = len([c for c in wanted if c not in fired and c not in completed and c not in failed])
     print(f"  {remaining} requested cities left un-sourced (future fires walk them in order).")
-    code, msg = sweep_outcome(total, total_unresolved, len(completed), skipped_seen)
+    code, msg = sweep_outcome(total, total_unresolved, len(completed), skipped_seen, len(empty))
     if code:
         print(msg)
         sys.exit(code)

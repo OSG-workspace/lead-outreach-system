@@ -152,7 +152,15 @@ def main() -> None:
     print(f"directory[{a.batch_prefix}]: {len(cands)} with a domain, "
           f"{len(unres)} name-only handed to Stage 2.5")
     if not cands and not unres:
-        sys.exit("ABORT: directory source produced nothing — check url/name/row regexes.")
+        # exit 8, never 1 — run_fire.py tolerates only 8, so exiting 1 here would
+        # kill the whole fire including the sources queued after this one that
+        # still had ground (measured on 2026-08-11-au-trades, where a dry OSM
+        # source pre-empted the Google Places source that held all the supply).
+        # `sys.exit(<str>)` exits 1, which is how this read as fatal. A fire
+        # where EVERY source is dry still halts, at the Stage 3 dedup gate.
+        print("NO FRESH GROUND: directory source produced nothing. If this repeats, "
+              "check the url/name/row regexes.", file=sys.stderr)
+        sys.exit(8)
 
 
 if __name__ == "__main__":

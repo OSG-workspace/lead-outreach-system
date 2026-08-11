@@ -244,12 +244,22 @@ def sweep_outcome(total: int, total_unresolved: int, cities_swept: int,
     """Decide how a finished places sweep should exit. -> (exit_code, message).
 
     exit 0 = produced yield; exit 8 = no fresh ground (an expected end state, so
-    a run's other sources still carry it); exit 1 = anomalous, halt loudly.
+    a run's other sources still carry it).
 
     The distinction that matters: yield is domain-rows PLUS name-only rows. On
     the default Pro tier `total` is ALWAYS 0 because websiteUri is never
     requested, so judging yield by `total` alone would hard-abort every
     successful Pro sweep as "Google returned 0 businesses" and kill the run.
+
+    NO DRY SWEEP EXITS 1 (2026-08-11) — mirrors the same change in
+    source_overpass.py, for the same reason. run_fire.py tolerates only exit 8,
+    so any source that exits 1 kills the whole fire including the sources after
+    it that still had ground. A dry sweep cannot distinguish "bad key / bad
+    included_type" from "sparse type in this geography", and guessing wrong the
+    fatal way cost a full run on 2026-08-11-au-trades. The suspicion is still
+    printed, as a WARNING on an exit-8 path. A fire where EVERY source is dry
+    still halts, at run_fire.py's Stage 3 "0 candidates after dedup" gate, which
+    is the only place that can see all sources at once.
     """
     if total or total_unresolved:
         return 0, ""
@@ -260,9 +270,10 @@ def sweep_outcome(total: int, total_unresolved: int, cities_swept: int,
     if skipped:
         return 8, (f"NO FRESH GROUND: swept {cities_swept} city/target unit(s); all "
                    f"{skipped} businesses found were already sourced or contacted.")
-    return 1, (f"ABORT: swept {cities_swept} city/target unit(s) and Google Places "
-               f"returned 0 businesses. Check the API key's restrictions and that "
-               f"the included_type values are valid Places API (New) Table A types.")
+    return 8, (f"NO FRESH GROUND: swept {cities_swept} city/target unit(s) and Google "
+               f"Places returned 0 businesses. Not ledgered, so they are retried next "
+               f"fire. If this repeats, check the API key's restrictions and that the "
+               f"included_type values are valid Places API (New) Table A types.")
 
 
 def places_ledger_key(vertical: str, included_type: str) -> str:
