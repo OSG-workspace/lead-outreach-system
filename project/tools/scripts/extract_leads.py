@@ -53,6 +53,7 @@ from email_utils import (ROLE_RE, JUNK_RE, FREEMAIL,          # noqa: E402
                          PLACEHOLDER_LOCALS)
 # Freemail/ISP variants outside the base set (live.com.au, bigpond.com, …).
 from name_from_email import ALL_FREEMAIL as FREEMAIL_ALL      # noqa: E402
+from traffic_signals import detect_traffic                    # noqa: E402
 
 SENT = set()
 sent_log_path = Path(args.sent_log) if args.sent_log else ROOT.parent.parent / "vault" / "lead-outreach" / "sent-log.md"
@@ -332,6 +333,12 @@ for row in candidates_rows:
     else:
         hotel_volume, hotel_volume_evidence = "na", ""
 
+    # Traffic / demand signal — EVERY vertical, not just hotels. Reads only the
+    # HTML already fetched above, so it costs no request and no token.
+    traffic_tier, traffic_score, traffic_evidence, traffic_signals = detect_traffic(
+        html_lower, pages, branches
+    )
+
     lead = {
         "lead_id": f"web-{domain.replace('.','-')}",
         "lead_slug": domain.replace(".","-"),
@@ -347,6 +354,10 @@ for row in candidates_rows:
         "signal_evidence": evidence,
         "hotel_volume": hotel_volume,
         "hotel_volume_evidence": hotel_volume_evidence,
+        "traffic_tier": traffic_tier,
+        "traffic_score": traffic_score,
+        "traffic_evidence": traffic_evidence,
+        "traffic_signals": traffic_signals,
         "score": score,
         "pages_scanned": pages,
         "emails_found": n_emails,

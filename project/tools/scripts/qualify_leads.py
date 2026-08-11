@@ -66,6 +66,17 @@ CLASS_RANK = {"person": 0, "role": 1, "personal": 2}
 HOTEL_VERTICALS = {"hotel", "hotels", "resort", "resorts", "bnb", "guesthouse", "guesthouses"}
 VOLUME_RANK = {"high": 2, "medium": 1, "low": 0}
 
+# Traffic / demand tier, produced for EVERY vertical by extract_leads.py.
+# `unknown` sits ABOVE `low` deliberately: it means "we could not measure this
+# site", which is our fetch failing, not the business being quiet. A lead we
+# failed to measure must not be punished as though we had measured it.
+TRAFFIC_RANK = {"high": 3, "medium": 2, "unknown": 1, "low": 0}
+
+
+def _traffic_tier(lead: dict) -> str:
+    """Missing field (lead from an older extract) reads as `unknown`, never `low`."""
+    return str(lead.get("traffic_tier") or "unknown").lower()
+
 
 def load(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
@@ -87,7 +98,20 @@ def main() -> None:
     require_hotel_volume = bool(cfg.get("require_hotel_size_volume"))
     min_volume = VOLUME_RANK.get(str(cfg.get("min_hotel_volume", "medium")).lower(), 1)
 
+    # Optional per-campaign traffic floor. ABSENT KEY = NO FLOOR, so the 20
+    # fixtures with no qualify.json are untouched. An INVALID value also means
+    # no floor: a typo must never silently start dropping leads.
+    raw_floor = str(cfg.get("min_traffic_tier", "")).lower().strip()
+    min_traffic = TRAFFIC_RANK.get(raw_floor) if raw_floor in TRAFFIC_RANK else None
+    if raw_floor and min_traffic is None:
+        print(f"  WARNING: ignoring invalid min_traffic_tier={raw_floor!r} "
+              f"(expected one of high/medium/low) — no traffic floor applied")
+    if min_traffic is not None and raw_floor == "unknown":
+        print("  WARNING: min_traffic_tier='unknown' is meaningless — no floor applied")
+        min_traffic = None
+
     dropped_freemail = dropped_score = dropped_signal = dropped_small_hotel = 0
+    dropped_traffic = 0
     kept: list[dict] = []
     disqualified: list[tuple[str, str]] = []   # (domain, reason) -> permanent block
 
@@ -121,6 +145,15 @@ def main() -> None:
             if VOLUME_RANK.get(tier, 0) < min_volume:
                 dropped_small_hotel += 1
                 disqualified.append((_domain(l), "hotel-volume-too-low"))
+                continue
+        # Traffic floor. Deliberately does NOT append to `disqualified`: that
+        # ledger blocks a domain permanently on every future run and every
+        # channel, and a traffic verdict depends on how well we crawled the site
+        # TODAY. `unknown` is exempt — we never punish a site we failed to measure.
+        if min_traffic is not None:
+            t = _traffic_tier(l)
+            if t != "unknown" and TRAFFIC_RANK.get(t, 0) < min_traffic:
+                dropped_traffic += 1
                 continue
         kept.append(l)
 
@@ -159,12 +192,27 @@ def main() -> None:
                     seen_before.add(dom)
                     f.write(f"{dom}|{today}|{run_slug}|{reason}\n")
 
-    # Rank by fit: bigger/high-volume hotels first, then score, then
-    # person-before-role, then bigger chains first.
+    # Rank by fit. Traffic is a TIE-BREAK, deliberately placed BELOW the two
+    # email-quality keys (score, then person>role class).
+    #
+    # Calibrated 2026-08-10 over 990 domains: the tier itself discriminates well
+    # as a busyness measure (21.1% high / 34.6% medium / 44.2% low). What could
+    # NOT be validated is whether busy businesses are easier or HARDER to reach:
+    # only one run on disk carries both raw_html/ and Stage 5.5 outcomes
+    # (2026-07-27-lb-ngos-1, n=37, NGOs only, high tier n=1), which proves
+    # nothing either way. The plausible adverse mechanism is that larger orgs
+    # publish only role inboxes (info@, reception@), and email-availability
+    # failures are ALREADY 77% of all enrichment drops. Leading the sort with
+    # traffic could therefore lower send yield while picking better prospects.
+    # So traffic only reorders leads of EQUAL email quality: upside where it is
+    # free, no ability to push a hard-to-reach lead ahead of a reachable one.
+    # Revisit once a non-NGO run exists with both artifacts.
     kept.sort(key=lambda l: (
         -VOLUME_RANK.get(l.get("hotel_volume", "na"), -1) if l.get("hotel_volume", "na") != "na" else 0,
         -int(l.get("score", 0)),
         CLASS_RANK.get(l.get("email_class"), 9),
+        -TRAFFIC_RANK.get(_traffic_tier(l), 1),
+        -int(l.get("traffic_score", 0)),
         -int(l.get("branches_estimate", 0)),
     ))
 
@@ -180,6 +228,9 @@ def main() -> None:
     if require_hotel_volume:
         print(f"  dropped small/low-volume hotel: {dropped_small_hotel} "
               f"(need >= {cfg.get('min_hotel_volume','medium')} size/volume signal)")
+    if min_traffic is not None:
+        print(f"  dropped low-traffic:     {dropped_traffic} "
+              f"(need >= {raw_floor} traffic tier; not ledgered — this run only)")
     print(f"  qualified before cap:    {len(kept)}")
     if over_cap > 0:
         print(f"  CAPPED OFF (top-{args.cap} kept): {over_cap} qualified leads held back "

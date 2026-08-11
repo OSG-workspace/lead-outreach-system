@@ -25,11 +25,24 @@
     {
       "type": "places",
       "_note": "Google Places API (New), adaptive quadtree over the same places.txt. Needs GOOGLE_PLACES_API_KEY in project/.env; without it this source reports no fresh ground (exit 8) and the run continues on the other sources, so this line is safe to ship before the key exists. included_type values must be valid Places API (New) Table A types: an unknown type makes the sweep return nothing and halts loudly. No \"tier\" set here, so this defaults to Pro (id+name only, $32/1k) rather than Enterprise ($35/1k, returns websiteUri/phone) — the Places API ToS restricts persisting website/phone Content, so this campaign never requests it. run_fire.py auto-enables resolve_domains for that reason: Pro-tier results are name-only until Stage 2.5 independently proves a domain against the business's own site (search + fetch + name-token match), which this pipeline already does for weakly-mapped OSM markets.",
+      "max_requests": 150,
       "targets": [
-        {"included_type": "plumber", "vertical": "trades"},
-        {"included_type": "electrician", "vertical": "trades"},
-        {"included_type": "locksmith", "vertical": "trades"},
-        {"included_type": "roofing_contractor", "vertical": "trades"}
+        {
+          "included_type": "plumber",
+          "vertical": "trades"
+        },
+        {
+          "included_type": "electrician",
+          "vertical": "trades"
+        },
+        {
+          "included_type": "locksmith",
+          "vertical": "trades"
+        },
+        {
+          "included_type": "roofing_contractor",
+          "vertical": "trades"
+        }
       ]
     }
   ]

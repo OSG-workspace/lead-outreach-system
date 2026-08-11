@@ -106,13 +106,22 @@ Call site: alongside the existing `detect_hotel_volume` call, using the same con
 
 #### 3a. Ranking — automatic, every campaign, no configuration
 
+> **AMENDMENT (2026-08-10, post-implementation):** the design below — traffic
+> as the LEADING sort key — was the original plan and was **deliberately
+> rejected** before ship. What actually shipped puts traffic 4th, BELOW
+> `-score` and `CLASS_RANK`, as a tie-break only. See "Why this was reversed"
+> below for the evidence. The original design is kept here, struck through in
+> spirit, so a future reader can see what was tried and why it changed — not
+> to describe current behaviour.
+
 `qualify_leads.py:164-171` currently sorts ascending by:
 
 ```
 (-VOLUME_RANK[hotel_volume] if != "na" else 0, -score, CLASS_RANK[email_class], -branches_estimate)
 ```
 
-New sort key:
+Originally-designed sort key (NOT shipped — see amendment above and "Why this
+was reversed"):
 
 ```
 (-TRAFFIC_RANK[traffic_tier],
@@ -125,12 +134,64 @@ New sort key:
 
 with `TRAFFIC_RANK = {"high": 3, "medium": 2, "unknown": 1, "low": 0}`.
 
-Two deliberate choices:
+Two deliberate choices behind the original design:
 
 - **Tier leads, but only at bucket granularity.** Traffic decides the coarse ordering so busy businesses get the 250 slots. Within a bucket the existing `score` still decides, preserving the email-class ordering (`person` 90 / `role` 82) that governs whether enrichment can succeed at all. Sorting purely by traffic would raise the value of each hit while lowering the hit rate; this ordering raises value without sacrificing rate.
 - **`unknown` ranks above `low`, below `medium`.** A lead we failed to measure should not be punished as though it were measured and found quiet.
 
-Because this is a sort-key change with no config, it takes effect for **all runs** immediately.
+Because this is a sort-key change with no config, it takes effect for **all runs** immediately. **This last sentence did not hold** — see below.
+
+#### What shipped instead
+
+`qualify_leads.py` sorts (see `qualify_leads.py` around lines 195-217):
+
+```
+(-VOLUME_RANK[hotel_volume] if != "na" else 0,
+ -score,
+ CLASS_RANK[email_class],
+ -TRAFFIC_RANK[traffic_tier],
+ -traffic_score,
+ -branches_estimate)
+```
+
+Traffic is now the **4th key**, a tie-break used only when two leads are
+already equal on hotel-volume, `score`, and email-class. It still uses the
+same `TRAFFIC_RANK = {"high": 3, "medium": 2, "unknown": 1, "low": 0}` and the
+`unknown`-above-`low` protection, but it can never outrank a better-scoring or
+better-email-class lead the way the original leading-key design would have.
+
+#### Why this was reversed
+
+Calibration (990 domains, 5 run folders) validated the tier as a real
+busyness measure: it discriminates cleanly at 21.1% high / 34.6% medium /
+44.2% low, and that part of the design held.
+
+What it could NOT validate is the actual hypothesis the leading-sort-key
+design depended on — that busier businesses are EASIER to enrich (find a
+named decision-maker with a direct email). Only one run on disk had both
+`raw_html/` (needed to score traffic) and Stage 5.5 enrichment ground truth
+(`leads-with-contact.json` + `leads-dropped.json`): `2026-07-27-lb-ngos-1`,
+n=37, a single vertical (NGOs), with only 1 lead in the high tier. Within that
+thin sample, the relationship ran the WRONG way — low tier enriched at 80%,
+medium at 62.5%, high at 0% (n=1, not meaningful alone) — and the
+point-biserial correlation between raw traffic score and enrichment survival
+was -0.34, an inverse relationship.
+
+The plausible mechanism: larger/busier organisations more often publish only
+a role inbox (`info@`, `reception@`) rather than a named decision-maker's
+address, and email-availability failure is already 77% of all Stage 5.5
+drops. A leading traffic key would have pushed exactly those harder-to-reach
+leads ahead of reachable ones, for a stage that is already supply- and
+yield-constrained.
+
+n=37 in one non-representative vertical is too thin to prove the inverse
+relationship generalizes, but it was enough to reject the positive-correlation
+hypothesis the leading-key design required — so the design was scaled back to
+a same-quality-only tie-break, which has upside (free reordering among
+equally-reachable leads) with no ability to push a hard-to-reach lead ahead of
+a reachable one. Revisit the leading-key design if a non-NGO run ever produces
+both `raw_html/` and Stage 5.5 outcomes and shows the expected positive
+relationship.
 
 #### 3b. Floor — opt-in per campaign
 
@@ -199,6 +260,19 @@ Calibration procedure:
 3. Set the tier thresholds so the distribution is discriminating rather than degenerate — a detector that labels 95% of leads `high` is worthless, and so is one that labels 95% `low`.
 4. Where a run has both `raw_html/` and a matching `leads-dropped.json` / `enrich-summary.json`, cross-tabulate tier against Stage 5.5 outcome. If higher tiers show a higher enrichment success rate, that is direct evidence the signal is real. Record the number in the module.
 5. Only then set each campaign's `min_traffic_tier` in `templates/<base>/qualify.json`.
+
+> **AMENDMENT (2026-08-10, post-implementation):** step 5 above did not
+> happen and should not be read as describing what shipped. Calibration
+> validated the tier as a busyness measure (step 3), but the cross-tab in
+> step 4 came back thin and adverse (n=37, one vertical, inverse
+> correlation — see "Why this was reversed" in the Architecture section
+> above), so no fixture sets `min_traffic_tier`, and the ranking design was
+> scaled back from a leading sort key to a same-quality-only tie-break. The
+> floor MECHANISM shipped (an opt-in `qualify.json` key, `unknown` exempt,
+> drops not ledgered) but is dormant everywhere. Setting a floor on any
+> fixture requires re-measuring both the enrichment cross-tab in a non-NGO
+> vertical AND fetch-completeness stability (see the `MIN_HTML_FOR_JUDGMENT`
+> comment in `traffic_signals.py`) before it can be considered safe.
 
 Ship order: ranking first (safe, no drops), floors second (after calibration).
 

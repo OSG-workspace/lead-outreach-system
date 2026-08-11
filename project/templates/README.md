@@ -165,10 +165,57 @@ estimate; `max_requests` is a hard stop. Needs `GOOGLE_PLACES_API_KEY` in
 `project/.env` — a missing key is a loud abort with setup instructions, never a
 silent fallback.
 
-The `places` city ledger is keyed `places:<vertical>`, deliberately separate from
-the OSM `<vertical>` key: ground OSM has exhausted is fresh ground here, so the
-two sources must not retire each other's cities. Domain dedup at merge still
-guarantees nobody is contacted twice.
+The `places` city ledger is keyed `places:<vertical>:<included_type>`, deliberately
+separate from the OSM `<vertical>` key: ground OSM has exhausted is fresh ground
+here, so the two sources must not retire each other's cities. Domain dedup at
+merge still guarantees nobody is contacted twice.
+
+### Places sources: the three rules every fixture's places block must follow
+
+Every campaign carries a `places` source as of 2026-08-10, because OSM indexes
+PREMISES and the map ground goes stale — `eu-hotels` had swept 279/279 of its
+cities and `au-trades` 16/16, so both were firing zero candidates. These three
+rules are what keep ~20 simultaneous places sources safe. Read them before adding
+or editing one.
+
+**1. `included_type` MUST be a Places API (New) TABLE A value.** An invalid type
+is not a soft skip: the sweep returns nothing and `sweep_outcome()` hard-aborts
+the run. Verify against Google's live Table A docs, not memory. The trap that
+caught this project: **`general_contractor` is TABLE B only** — it is real in
+Google's taxonomy but invalid as an `included_type`, so a construction fixture
+using it would break on every fire. Types with no Table A equivalent at all
+(HVAC, pest control, counselling/psychotherapy, language/driving schools beyond
+the generic `school`) simply cannot be sourced this way; use the closest honest
+type or leave that sub-vertical to OSM, and say so in the fixture's `_comment`.
+
+**2. `max_requests` is a HARD per-fixture cap, and it exists for money.**
+`FREE_REQUESTS["pro"]` is 5,000 — but that is Google's **monthly allowance for
+the whole Cloud project** behind the single `GOOGLE_PLACES_API_KEY`, not a
+per-fixture or per-run budget. `source_places.py` defaults an unset
+`max_requests` to that full 5,000, and each fixture's own `Budget.report()` is
+blind to what every other fixture already spent that month. With ~20 fixtures
+re-firing on this project's normal cadence (re-fires are routine — see
+`../CLAUDE.md`), leaving it unset would silently cross into $32/1,000 billing.
+Every fixture therefore pins **`"max_requests": 150`**, which keeps a full sweep
+of all campaigns inside one month's free allowance with headroom for re-fires.
+Raise it only against the whole-project monthly total, never per campaign in
+isolation.
+
+**3. The places `vertical` MUST be fixture-scoped.** `places_ledger_key()` writes
+`places:<vertical>:<included_type>` into the **single global**
+`vault/lead-outreach/overpass-cities-fired.txt` with no campaign scoping. Two
+fixtures sharing a bare vertical name will retire each other's cities — a silent
+cross-campaign supply collapse with no connection to the affected campaign's own
+history. This is not hypothetical: `us-clinics`, `lb-receptionist`,
+`gcc-receptionist` and `worldwide-receptionist` all use the vertical `clinic`,
+and `New York`/`Los Angeles` appear in more than one `places.txt`. So use
+`clinic-us`, `clinic-lb`, `clinic-gcc`, `clinic-ww` — never bare `clinic`. The
+map source keeps its original bare vertical, since its ledger key is built
+differently and existing OSM ground must not be re-swept.
+
+A places source is safe to ship before the API key exists: without one the source
+reports no fresh ground (exit 8) and the run simply continues on its other
+sources.
 
 ## Template-first rule (new campaigns)
 

@@ -1,1 +1,30 @@
-{"selector": "\"tourism\"=\"hotel\"", "vertical": "hotel", "max_per_run": 350}
+{
+  "_comment": "map = this campaign's original OSM config, unchanged. places = added 2026-08-10 so a swept OSM ledger no longer means a zero-candidate fire. See templates/README.md 'Places sources' for the Table A / budget / ledger-scoping rules that govern every fixture's places block.",
+  "max_per_run": 350,
+  "sources": [
+    {
+      "type": "map",
+      "targets": [
+        {
+          "selector": "\"tourism\"=\"hotel\"",
+          "vertical": "hotel"
+        }
+      ]
+    },
+    {
+      "type": "places",
+      "_note": "Deliberately EXCLUDES lodging/guest_house/bed_and_breakfast/hostel/motel: the ICP drops small B&Bs and guesthouses, so those types would flood the funnel with the disqualified segment.",
+      "max_requests": 150,
+      "targets": [
+        {
+          "included_type": "hotel",
+          "vertical": "hotel-eu"
+        },
+        {
+          "included_type": "resort_hotel",
+          "vertical": "hotel-eu"
+        }
+      ]
+    }
+  ]
+}
