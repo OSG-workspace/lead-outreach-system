@@ -285,9 +285,21 @@ skills) is retired — those skills are archived and must not be invoked.
 
 | Channel | Tool | Notes |
 |---|---|---|
+| Bulk POI | **Overture Maps** via DuckDB (`source_overture.py`) | Free, CDLA/Apache, no key, **no request ceiling**. The default first source for every fixture. ~half the rows carry the business's own domain |
 | Google Maps | `gosom/google-maps-scraper` (Go binary in `./tools/`) | Free, MIT, 33+ data points, ~120 places/min, no API key |
 | Web search | `ddgs` Python lib (DuckDuckGo) | Free, no key, no real limit |
 | Web scraping | `crawl4ai` (Python) | Free, Apache 2.0, LLM-friendly markdown |
+
+**Every stage runs on `tools/venv/bin/python3`, and that is load-bearing.**
+`run_fire.py` resolves the interpreter once (`_interpreter()`) instead of
+dispatching bare `python3`. Bare `python3` resolves off `$PATH` to the *system*
+interpreter, which does not have this pipeline's dependencies. That is not a
+theoretical concern: on 2026-08-11-gcc-receptionist it silently gave Stage 2.5
+the frozen `duckduckgo_search` package instead of `ddgs`, every search returned
+nothing (`0/300 verified, breakdown {'no-results': 300}`), and the run read as
+"these businesses have no findable websites" when the same queries return 5/5
+under the venv. If you ever see a stage fail wholesale with a dependency-shaped
+symptom, check which interpreter it ran on before concluding anything about supply.
 
 Instagram sourcing has been removed from this stack — the account-flag risk and credential overhead weren't worth it for the user's typical briefs. The `lead-sourcing-instagram` skill is intentionally absent; if a brief genuinely needs creator-on-IG targets, say the channel is disabled and suggest web search instead.
 

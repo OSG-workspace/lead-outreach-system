@@ -102,6 +102,10 @@ The agent-per-query `"search"` method was retired 2026-08-05 along with its
 `source-agent-*` definitions; a poorly-mapped vertical now reaches for a
 `places` source (below) rather than a fan-out of WebSearch agents.
 
+- **`"overture"`** — bulk open POI enumeration via `source_overture.py`, the
+  default first source since 2026-08-12. Free, keyless, no request ceiling, and
+  roughly half its rows already carry the business's own domain. See
+  "Overture sources" below.
 - **`"map"`** — deterministic OSM enumeration via `source_overpass.py`:
   exhaustive per city, region by region, zero LLM tokens, a per-vertical
   fired-city ledger (`vault/lead-outreach/overpass-cities-fired.txt`) so
@@ -132,9 +136,68 @@ needs more declares them explicitly, and they run in order:
 
 | type | index it reads | use it when |
 |---|---|---|
+| `overture` | Overture Maps bulk POI (parquet on S3) | **the default first source for any premises-or-profile ICP.** Free, no request ceiling, no key, and ~half the rows already carry the business's own domain. |
 | `map` | OpenStreetMap via Overpass | the ICP is **premises-bound** and well mapped (hotels, clinics, law offices). Free, exhaustive per city, 0 tokens. |
 | `places` | Google Places API (New) | the ICP has **no premises** or OSM is thin — mobile trades, home services, anything that lives on a Google Business Profile. |
 | `directory` | any paginated web listing | the authoritative list is a register or association roster (licensing boards, member directories). |
+
+### Overture sources: bulk POI, and why it now leads the ladder
+
+Added 2026-08-12. `map` and `places` both starve in their own way — OSM only holds
+what volunteers mapped, and Places is per-request metered with a 20-result cap
+that forces a quadtree. `source_overture.py` is the third shape: a **bulk**
+dataset queried in place with DuckDB over S3, so a whole city comes back in one
+read. No key, no request ceiling, no per-call cost, and the licence
+(CDLA Permissive 2.0 / Apache 2.0) permits commercial use *and* storage of the
+name/website fields — unlike the Places Content rules that pin `places` to Pro
+tier.
+
+Measured on release `2026-07-22.0` when this source was built:
+
+| probe | result |
+|---|---|
+| Riyadh bbox, all categories | **41,396 POIs in 32s, 21,823 (52.7%) with a website** |
+| New York bbox, `law` preset | 6,586 law POIs |
+| Sydney bbox, `trades` preset | 6,531 trades POIs |
+
+That last row is the point. `au-trades` was documented as **nationally
+exhausted** — an Overpass probe of the entire Australian continent returned 450
+elements, 159 with a website, and all 16 metros were ledgered. Overture returns
+more trades businesses in Sydney alone, with real `.com.au` domains.
+
+**Config is just the vertical.** Categories come from the shared preset map at
+`tools/scripts/overture_presets.json`, so no fixture hand-writes a category list:
+
+```json
+{"type": "overture",
+ "targets": [{"vertical": "clinic"}, {"vertical": "salon"}]}
+```
+
+Lookup is `preset` → the vertical verbatim → the vertical's first segment, so
+`clinic-gcc`, `hotel-eu` and `trades-emergency` all resolve to the right preset
+under this repo's existing naming convention. A target may still override with
+its own `"categories": [...]` (exact list) or `"category_match": "regex"`.
+
+**Why presets are shared rather than per-fixture.** Overture ships 1,862 distinct
+primary categories and hand-written regexes get them wrong invisibly — measured
+while building this: an `ngo` regex matched `bingo_hall` and
+`mongolian_restaurant`, `fintech` matched `food_banks`, `homeservices` matched
+`movie_television_studio`, and a `salon` regex sourced Sephora, MAC and H&M
+(cosmetics *retail*, not salons). The curated lists are derived from the real
+taxonomy, validated to exist in the release, and inherited by every campaign.
+Retailers, suppliers and schools-of-the-trade are deliberately excluded: a paint
+store is not a painter.
+
+Other options: `"release"` pins a release (default = newest discovered),
+`"min_confidence"` drops low-confidence rows, `"include_closed"` keeps
+`operating_status = closed`, and `"require_website": false` also emits the
+name-only rows for Stage 2.5 (which auto-enables `resolve_domains`). The city
+ledger is keyed `overture:<vertical>`, separate from the OSM and `places:` keys,
+so the three sources never retire each other's ground.
+
+**Dependency:** `duckdb` in `tools/venv` (added to `tools/install.sh`). Missing
+it exits 8 — "this source opened no ground" — so the fire carries on with its
+other sources rather than dying.
 
 **Why `places` exists — measured, not assumed (2026-07-31).** A live Overpass
 probe of the *entire Australian continent* for `craft~plumber|electrician|hvac`

@@ -34,6 +34,43 @@ PROJECT = Path(__file__).resolve().parents[2]          # .../project
 SENT_LOG = "vault/lead-outreach/sent-log.md"
 
 
+def _interpreter() -> str:
+    """The interpreter EVERY stage subprocess must run under: the project venv.
+
+    Stages are dispatched as `[PY, "tools/scripts/<stage>.py", ...]`. That slot
+    used to be the literal string "python3", which resolves off $PATH — and on a
+    normal shell that is /usr/bin/python3, NOT `tools/venv`. The venv is where
+    the pipeline's third-party deps actually live (ddgs, crawl4ai, duckdb), so
+    any stage needing one silently got a different, wrong interpreter.
+
+    This is not hypothetical. On 2026-08-11-gcc-receptionist, Stage 2.5 ran on
+    /usr/bin/python3, which has no `ddgs` but does have its frozen predecessor
+    `duckduckgo_search` (renamed July 2025, no longer receiving anti-bot fixes).
+    resolve_domains.py's import fallback dutifully used it and every single
+    search returned nothing: 0/300 verified, breakdown {'no-results': 300}. The
+    same queries return 5/5 results under the venv. It read as "GCC businesses
+    are unfindable" — a data-supply conclusion — when it was purely this.
+
+    Only `fetch_html.sh` was immune, because it sources the venv itself; that
+    is why Stage 4 rendered 303 pages while Stage 2.5 scored zero in the same
+    run. Resolving here fixes every stage of every campaign at once, and keeps
+    working no matter how the fire was started (fire_campaign.sh, ./linkedin-run,
+    a bare `python3 run_fire.py`, launchd).
+    """
+    venv = PROJECT / "tools" / "venv" / "bin" / "python3"
+    if venv.exists():
+        return str(venv)
+    # No venv (fresh checkout before tools/install.sh): fall back to the
+    # interpreter running THIS file rather than $PATH's, so at least the
+    # orchestrator and its children stay on one interpreter.
+    print(f"WARN: {venv} missing — stages fall back to {sys.executable}. "
+          f"Run `bash tools/install.sh` to build the venv.", file=sys.stderr)
+    return sys.executable
+
+
+PY = _interpreter()
+
+
 PLAN = False   # --plan: trace the stage sequence without executing anything
 STATUS_FILE: Path | None = None   # runs/<slug>/status.txt — live heartbeat for the session/user
 
@@ -159,9 +196,9 @@ def resolve_sourcing(run: Path) -> dict:
         for i, s in enumerate(cfg["sources"], 1):
             if not isinstance(s, dict) or not s.get("type"):
                 die("pre-flight", f'sourcing.json sources[{i}] needs a "type"')
-            if s["type"] not in ("map", "directory", "places"):
+            if s["type"] not in ("map", "directory", "places", "overture"):
                 die("pre-flight", f'sourcing.json sources[{i}] unknown type {s["type"]!r} '
-                                  '(known: "map", "places", "directory")')
+                                  '(known: "map", "places", "overture", "directory")')
             srcs.append(s)
         cfg["sources"] = srcs
     else:
@@ -177,9 +214,16 @@ def resolve_sourcing(run: Path) -> dict:
     # a silent zero-yield failure, not a real choice. A fixture that explicitly
     # sets `"tier": "enterprise"` on every places source (a deliberate, opt-in
     # ToS tradeoff) or explicitly sets `"resolve_domains": false` is left alone.
+    #
+    # An `overture` source needs it only when the fixture opts INTO name-only
+    # rows (`"require_website": false`). By default that source emits solely
+    # rows whose domain the dataset already carries, so there is nothing for
+    # Stage 2.5 to resolve and enabling it would just cost time.
     if "resolve_domains" not in cfg:
-        needs_resolve = any(s["type"] == "places" and (s.get("tier") or "pro") != "enterprise"
-                             for s in cfg["sources"])
+        needs_resolve = any(
+            (s["type"] == "places" and (s.get("tier") or "pro") != "enterprise")
+            or (s["type"] == "overture" and s.get("require_website") is False)
+            for s in cfg["sources"])
         if needs_resolve:
             cfg["resolve_domains"] = True
 
@@ -491,7 +535,7 @@ def main():
         the current run slug, fetch skips already-fetched files, extract/qualify
         recompute. Between waves (final=False) an empty result is an expected
         keep-sourcing state, not kill-on-fallback; on the last pass it halts."""
-        sh(["python3", "tools/scripts/merge_candidates.py", "--run-dir", str(run),
+        sh([PY, "tools/scripts/merge_candidates.py", "--run-dir", str(run),
             "--sent-log", SENT_LOG], "Stage 3 merge")
         merged = count_lines(run / "candidates-all.txt")
         if not PLAN and merged == 0:
@@ -502,7 +546,7 @@ def main():
         if not PLAN and merged < 50 and final:
             print(f"  NOTE: only {merged} merged candidates (<50).")
         sh(["bash", "tools/scripts/fetch_html.sh", str(run)], "Stage 4 fetch")
-        ecmd = ["python3", "tools/scripts/extract_leads.py", "--run-dir", str(run),
+        ecmd = [PY, "tools/scripts/extract_leads.py", "--run-dir", str(run),
                 "--sent-log", SENT_LOG]
         # A run whose only channel is not email must not have its leads deleted
         # at extract for lacking a mailbox. WhatsApp reaches a MOBILE, so a
@@ -517,7 +561,7 @@ def main():
                 return die_no_supply("Stage 5 extract", "0 leads extracted")
             print("  NOTE: 0 leads extracted so far; sourcing next wave.")
             return 0
-        qcmd = ["python3", "tools/scripts/qualify_leads.py", "--run-dir", str(run)]
+        qcmd = [PY, "tools/scripts/qualify_leads.py", "--run-dir", str(run)]
         if li_only:
             qcmd.append("--linkedin-run")
         elif wa_only:
@@ -573,16 +617,16 @@ def main():
     for i, (s, t) in enumerate(units, 1):
         if t:
             label_bit = t["vertical"]
-        elif s["type"] == "places":
-            # one process sweeps all of this source's place types
+        elif s["type"] in ("places", "overture"):
+            # one process sweeps all of this source's targets
             label_bit = "-".join(sorted({x.get("vertical", "")
-                                         for x in (s.get("targets") or [])})) or "places"
+                                         for x in (s.get("targets") or [])})) or s["type"]
         else:
             label_bit = s.get("vertical") or s["type"]
         label = ("Stage 2 source" if len(units) == 1 else
                  f"Stage 2 source [{i}/{len(units)}] {label_bit}")
         if s["type"] == "map":
-            cmd = ["python3", "tools/scripts/source_overpass.py", "--run-dir", str(run),
+            cmd = [PY, "tools/scripts/source_overpass.py", "--run-dir", str(run),
                    "--selector", t["selector"],
                    "--vertical", t["vertical"],
                    "--batch-prefix", f"{i:02d}-{t['vertical']}",
@@ -596,12 +640,21 @@ def main():
         elif s["type"] == "places":
             # Google Places API (New), adaptive quadtree. Same places.txt, same
             # candidate contract; reaches the businesses OSM has no premises for.
-            cmd = ["python3", "tools/scripts/source_places.py", "--run-dir", str(run),
+            cmd = [PY, "tools/scripts/source_places.py", "--run-dir", str(run),
+                   "--source", json.dumps(s),
+                   "--batch-prefix", f"{i:02d}-{label_bit}",
+                   "--max-candidates", str(share)]
+        elif s["type"] == "overture":
+            # Bulk open POI data (Overture Maps), queried in place over S3.
+            # Same places.txt, same candidate contract — but no request ceiling
+            # and no per-call cost, and ~half its rows already carry the
+            # business's own domain, so they skip Stage 2.5 entirely.
+            cmd = [PY, "tools/scripts/source_overture.py", "--run-dir", str(run),
                    "--source", json.dumps(s),
                    "--batch-prefix", f"{i:02d}-{label_bit}",
                    "--max-candidates", str(share)]
         else:   # directory: any paginated listing on the open web
-            cmd = ["python3", "tools/scripts/source_directory.py", "--run-dir", str(run),
+            cmd = [PY, "tools/scripts/source_directory.py", "--run-dir", str(run),
                    "--source", json.dumps(s),
                    "--batch-prefix", f"{i:02d}-{label_bit}"]
         # rc=8 means "this source has no fresh ground left" — an expected end
@@ -636,7 +689,7 @@ def main():
     # never guessed: a wrong domain pitches business A at business B and burns it
     # in the sent-log forever.
     if resolve_on:
-        sh(["python3", "tools/scripts/resolve_domains.py", "--run-dir", str(run),
+        sh([PY, "tools/scripts/resolve_domains.py", "--run-dir", str(run),
             "--config", json.dumps(sourcing)], "Stage 2.5 resolve domains")
 
     if dry_sources:
@@ -664,16 +717,16 @@ def main():
               "and the email drafter (Stage 8.6 resolves the person instead).")
     elif combined_custom:
         # ONE lead-writer per lead = find + write in a single pass (email-only custom).
-        sh(["python3", "tools/scripts/draft_lead_custom.py", "--phase", "prep",
+        sh([PY, "tools/scripts/draft_lead_custom.py", "--phase", "prep",
             "--run-dir", str(run)], "Stage 6.5C prep")
         batches = sorted(run.glob("lead-batch-*.txt"))
         prompts = [b.read_text() for b in batches]   # lead-writer reads scraped pages itself; keep inline (unchanged behavior)
         fan_out("lead-writer", prompts, "Stage 6.5C lead-writer", a.max_workers)
-        sh(["python3", "tools/scripts/draft_lead_custom.py", "--phase", "merge",
+        sh([PY, "tools/scripts/draft_lead_custom.py", "--phase", "merge",
             "--run-dir", str(run)], "Stage 6.5C merge")
     else:
         # 5.5 enrich (name-finder) — phone only when WhatsApp on.
-        prep = ["python3", "tools/scripts/enrich_contact_person.py", "--phase", "prep",
+        prep = [PY, "tools/scripts/enrich_contact_person.py", "--phase", "prep",
                 "--run-dir", str(run)]
         if wa_on:
             prep.append("--enrich-phone")
@@ -689,7 +742,7 @@ def main():
         # EnrichPhone is on; an email-only run ships the lean prompt.
         fan_out("name-finder", nf_prompts, "Stage 5.5 name-finder", a.max_workers,
                 include={"phone"} if wa_on else None)
-        merge = ["python3", "tools/scripts/enrich_contact_person.py", "--phase", "merge",
+        merge = [PY, "tools/scripts/enrich_contact_person.py", "--phase", "merge",
                  "--run-dir", str(run)]
         # A WhatsApp-ONLY run must always keep phone-reachable leads: requiring a
         # direct EMAIL on a channel that sends none is the gate that used to
@@ -709,15 +762,15 @@ def main():
             print("  WhatsApp-only run: skipping the email drafter "
                   "(Stage 8.5 writes the messages from leads-with-contact.json).")
         elif draft_mode == "custom":   # custom + WhatsApp path (gap-writer)
-            sh(["python3", "tools/scripts/draft_custom.py", "--phase", "prep",
+            sh([PY, "tools/scripts/draft_custom.py", "--phase", "prep",
                 "--run-dir", str(run)], "Stage 6 gap prep")
             gbatches = sorted(run.glob("gap-batch-*.txt"))
             prompts = [b.read_text() for b in gbatches]   # gap-writer reads pages itself; inline unchanged
             fan_out("gap-writer", prompts, "Stage 6 gap-writer", a.max_workers)
-            sh(["python3", "tools/scripts/draft_custom.py", "--phase", "merge",
+            sh([PY, "tools/scripts/draft_custom.py", "--phase", "merge",
                 "--run-dir", str(run)], "Stage 6 gap merge")
         else:                        # template
-            sh(["python3", "tools/scripts/draft_emails.py", "--run-dir", str(run)],
+            sh([PY, "tools/scripts/draft_emails.py", "--run-dir", str(run)],
                "Stage 6 template draft")
 
     drafted = count_lines(run / "emails-drafted.json")
@@ -735,7 +788,7 @@ def main():
         # Refresh the dead-letter suppression list from Brevo FIRST — sending
         # while the bounce-list is stale re-mails known-dead addresses and
         # burns sender reputation. Aborts the run if Brevo is unreachable.
-        sh(["python3", "tools/scripts/sync_brevo_events.py"], "Stage 7 bounce-sync")
+        sh([PY, "tools/scripts/sync_brevo_events.py"], "Stage 7 bounce-sync")
         cap = os.environ.get("MAX_EMAILS_PER_RUN", "1000")
         if target:
             cap = str(min(int(cap), target))   # outreach exactly the asked-for volume
@@ -749,9 +802,9 @@ def main():
         # persist_sent_log.py only writes rows with result == "sent", so running
         # it here records exactly what went out and nothing more. THEN we fail
         # the run.
-        send_rc = sh(["python3", "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
+        send_rc = sh([PY, "tools/scripts/send_batch_brevo.py", "--run-dir", str(run),
                       "--send", "--cap", cap], "Stage 7 send", tolerate=(6,))
-        sh(["python3", "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
+        sh([PY, "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
             "--sent-log", SENT_LOG], "Stage 8 persist")
         if send_rc == 6:
             die("Stage 7 send", "Brevo rejected one or more emails — the messages that "
@@ -766,19 +819,19 @@ def main():
     if wa_on:
         if draft_mode == "custom":
             # custom path: wa-writer agents compose per-company messages.
-            sh(["python3", "tools/scripts/draft_whatsapp_custom.py", "--phase", "prep",
+            sh([PY, "tools/scripts/draft_whatsapp_custom.py", "--phase", "prep",
                 "--run-dir", str(run)], "Stage 8.5 WA prep")
             wbatches = sorted(run.glob("wa-batch-*.txt"))
             if wbatches:
                 prompts = [b.read_text() for b in wbatches]
                 fan_out("wa-writer", prompts, "Stage 8.5 wa-writer", a.max_workers)
-                sh(["python3", "tools/scripts/draft_whatsapp_custom.py", "--phase", "merge",
+                sh([PY, "tools/scripts/draft_whatsapp_custom.py", "--phase", "merge",
                     "--run-dir", str(run)], "Stage 8.5 WA merge")
         else:
             # template path: deterministic drafter renders pitch.json's
             # wa_body_template. --fallback-only keeps email primary: only leads
             # whose direct email failed verification go out on WhatsApp.
-            wa_cmd = ["python3", "tools/scripts/draft_whatsapp.py", "--run-dir", str(run)]
+            wa_cmd = [PY, "tools/scripts/draft_whatsapp.py", "--run-dir", str(run)]
             if wa_send_fallback_only:
                 wa_cmd.append("--fallback-only")
             sh(wa_cmd, "Stage 8.5 WA template draft")
@@ -793,7 +846,7 @@ def main():
                "Stage 8.5 WA send")
             # WhatsApp sends must land in the sent-log too (idempotent —
             # previously a WhatsApp-ONLY run never persisted at all).
-            sh(["python3", "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
+            sh([PY, "tools/scripts/persist_sent_log.py", "--run-dir", str(run),
                 "--sent-log", SENT_LOG], "Stage 8.5 WA persist")
         else:
             print("[DRY-RUN] WhatsApp drafts written; send skipped.")
@@ -804,7 +857,7 @@ def main():
     # separate, paced process (linkedin/send/*.js), not part of a fire.
     li_drafted = 0
     if li_on:
-        sh(["python3", "tools/scripts/draft_linkedin.py", "--phase", "prep",
+        sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "prep",
             "--run-dir", str(run)], "Stage 8.6 LI prep")
         walk = ["node", "linkedin/scripts/walk_companies.js",
                 "--companies", str(run / "li-companies.json"),
@@ -838,7 +891,7 @@ def main():
         li_max_people = int(read_cfg(run, "li_max_people.txt", "60") or "60")
         walked = count_json(run / "people-raw.json")
         find_cap = max(0, li_max_people - walked) * 2
-        sh(["python3", "tools/scripts/resolve_li_profiles.py", "--phase", "prep",
+        sh([PY, "tools/scripts/resolve_li_profiles.py", "--phase", "prep",
             "--run-dir", str(run), "--cap", str(find_cap)],
            "Stage 8.6b LI profile-find prep")
         lif_batches = sorted(run.glob("lif-batch-*.txt"))
@@ -857,7 +910,7 @@ def main():
                        "to the OutputFile named inside it."
                        for b in lif_batches]
             fan_out("li-finder", prompts, "Stage 8.6b li-finder", a.max_workers)
-        rc_find = sh(["python3", "tools/scripts/resolve_li_profiles.py", "--phase", "merge",
+        rc_find = sh([PY, "tools/scripts/resolve_li_profiles.py", "--phase", "merge",
                       "--run-dir", str(run)], "Stage 8.6b LI profile-find merge", tolerate=(7,))
         if rc_find == 0:
             harvest = ["node", "linkedin/scripts/walk_companies.js",
@@ -870,7 +923,7 @@ def main():
             merge_people(run)
 
         li_cfg = read_cfg(run, "linkedin.json", "{}")
-        sh(["python3", "tools/scripts/qualify_people.py", "--run-dir", str(run),
+        sh([PY, "tools/scripts/qualify_people.py", "--run-dir", str(run),
             "--config", li_cfg], "Stage 8.6 LI qualify people", tolerate=(7,))
         # qualify_people ROUTES dormant/unreachable owners to the email chain
         # rather than dropping them. On a LinkedIn-ONLY run there is no email
@@ -887,7 +940,7 @@ def main():
                    f"pick them up on the next fire.")
             print(f"  {msg}")
             status(msg)
-        sh(["python3", "tools/scripts/draft_linkedin.py", "--phase", "batch",
+        sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "batch",
             "--run-dir", str(run)], "Stage 8.6 LI batch")
         li_batches = sorted(run.glob("li-batch-*.txt"))
         if li_batches:
@@ -896,10 +949,10 @@ def main():
                        "to the OutputFile named inside it."
                        for b in li_batches]
             fan_out("li-writer", prompts, "Stage 8.6 li-writer", a.max_workers)
-        rc = sh(["python3", "tools/scripts/draft_linkedin.py", "--phase", "merge",
+        rc = sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "merge",
                  "--run-dir", str(run)], "Stage 8.6 LI merge", tolerate=(7,))
         if rc == 0:
-            sh(["python3", "tools/scripts/linkedin_queue.py", "--run-dir", str(run),
+            sh([PY, "tools/scripts/linkedin_queue.py", "--run-dir", str(run),
                 "--config", li_cfg], "Stage 8.6 LI rank")
             # TWO-PHASE, because LinkedIn has a consent gate that email does not.
             # You cannot DM a stranger: the invite comes first, the DM only after

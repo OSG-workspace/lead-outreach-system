@@ -30,7 +30,7 @@ TPL="templates/$BASE"
 # run_fire.py or a fire-ready fixture gets rejected here before it is ever cloned:
 #   {selector, vertical}                    one OSM target
 #   {targets: [{selector, vertical}, …]}    audiences spanning different OSM keys
-#   {sources: [{type: map|places|directory, …}, …]}   several source adapters
+#   {sources: [{type: overture|map|places|directory, …}, …]}  several source adapters
 TGT=$(python3 -c "
 import json,sys
 c=json.load(open('$TPL/sourcing.json'))
@@ -39,7 +39,7 @@ if isinstance(srcs,list) and srcs:
     names=[]
     for i,s in enumerate(srcs,1):
         if not isinstance(s,dict) or not s.get('type'): sys.exit('BADSRC:%d' % i)
-        if s['type'] not in ('map','places','directory'): sys.exit('BADTYPE:%s' % s['type'])
+        if s['type'] not in ('map','places','directory','overture'): sys.exit('BADTYPE:%s' % s['type'])
         if s['type']=='map':
             ts=s.get('targets') or c.get('targets') or ([c] if c.get('selector') else [])
             if not ts: sys.exit('NONE')
@@ -52,6 +52,15 @@ if isinstance(srcs,list) and srcs:
             if [t for t in ts if not (t.get('included_type') and t.get('vertical'))]:
                 sys.exit('BAD:places source %d needs included_type+vertical' % i)
             names += ['places:'+t['vertical'] for t in ts]
+        elif s['type']=='overture':
+            # categories are optional here: they resolve from the shared
+            # overture_presets.json at run time (source_overture.py aborts with
+            # the known-preset list if a vertical matches none).
+            ts=s.get('targets') or []
+            if not ts: sys.exit('BAD:overture source %d has no targets' % i)
+            if [t for t in ts if not t.get('vertical')]:
+                sys.exit('BAD:overture source %d needs a vertical per target' % i)
+            names += ['overture:'+t['vertical'] for t in ts]
         else:
             names.append('directory')
     print(','.join(dict.fromkeys(names)))
@@ -65,7 +74,7 @@ else:
     case "$TGT" in
       NONE)     echo "ABORT: $TPL/sourcing.json needs a \"selector\"+\"vertical\" (the OSM tag filter naming this run's target audience, e.g. '\"office\"=\"lawyer\"'), a \"targets\" list for a multi-vertical campaign, or a \"sources\" list."; exit 1;;
       BADSRC*)  echo "ABORT: $TPL/sourcing.json sources entries each need a \"type\" ($TGT)."; exit 1;;
-      BADTYPE*) echo "ABORT: $TPL/sourcing.json has an unknown source type ($TGT). Known: map, places, directory."; exit 1;;
+      BADTYPE*) echo "ABORT: $TPL/sourcing.json has an unknown source type ($TGT). Known: overture, map, places, directory."; exit 1;;
       BAD*)     echo "ABORT: $TPL/sourcing.json target entries are incomplete ($TGT)."; exit 1;;
       *)        echo "ABORT: $TPL/sourcing.json is not valid JSON."; exit 1;;
     esac

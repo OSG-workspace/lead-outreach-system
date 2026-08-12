@@ -1,0 +1,46 @@
+{
+  "_comment": "Curated vertical -> Overture category map, shared by EVERY campaign. A fixture's overture target may name a `preset` (or just rely on its `vertical` matching a key here) instead of hand-writing categories, so precision is derived once and inherited by all branches rather than re-invented per fixture. Derived 2026-08-12 from the real 2026-07-22.0 taxonomy (1,862 distinct primary categories sampled across NYC / London / Riyadh / Sydney), NOT from guesswork. Every string here was verified to exist in that release by validate_presets(); a typo would otherwise be a silent zero-yield source. Loose regexes were rejected on evidence: `ngo` matched bingo_hall and mongolian_restaurant, `fintech` matched food_banks, `homeservices` matched movie_television_studio, and a salon regex pulled in Sephora/MAC/H&M cosmetics retail. Retailers, suppliers, wholesalers-of-the-trade and schools-of-the-trade are deliberately EXCLUDED from service-business presets: a paint store is not a painter.",
+
+  "clinic": ["doctor", "dentist", "medical_center", "physical_therapy", "general_dentistry", "chiropractor", "optometrist", "dermatologist", "cosmetic_dentist", "pediatrician", "orthodontist", "osteopathic_physician", "eye_care_clinic", "psychiatrist", "pediatric_dentist", "ophthalmologist", "public_health_clinic", "womens_health_clinic", "dialysis_clinic", "urgent_care_clinic", "walk_in_clinic", "counseling_and_mental_health", "community_health_center", "clinical_laboratories", "obstetrician_and_gynecologist"],
+
+  "veterinary": ["veterinarian"],
+
+  "salon": ["beauty_salon", "hair_salon", "beauty_and_spa", "nail_salon", "barber", "spas", "massage", "massage_therapy", "day_spa", "tanning_salon", "waxing", "hair_removal", "health_spa", "eyelash_service", "laser_hair_removal", "medical_spa"],
+
+  "law": ["lawyer", "legal_services", "immigration_law", "personal_injury_law", "divorce_and_family_law", "criminal_defense_law", "employment_law", "bankruptcy_law", "business_law", "real_estate_law", "disability_law", "estate_planning_law", "medical_law", "ip_and_internet_law", "patent_law", "tax_law", "civil_rights_lawyers", "dui_law", "entertainment_law", "social_security_law"],
+
+  "realestate": ["real_estate_agent", "real_estate", "property_management", "real_estate_service", "commercial_real_estate", "real_estate_investment"],
+
+  "property": ["property_management", "real_estate_agent", "real_estate", "real_estate_service", "commercial_real_estate"],
+
+  "carservice": ["automotive_repair", "automotive_services_and_repair", "auto_body_shop", "car_wash", "tire_dealer_and_repair", "auto_detailing", "auto_customization", "transmission_repair", "oil_change_station", "windshield_installation_and_repair", "auto_electrical_repair", "car_window_tinting"],
+
+  "auto": ["automotive_repair", "automotive_services_and_repair", "auto_body_shop", "car_wash", "tire_dealer_and_repair", "auto_detailing", "auto_customization", "transmission_repair", "oil_change_station", "windshield_installation_and_repair", "auto_electrical_repair", "car_window_tinting"],
+
+  "homeservices": ["contractor", "plumbing", "electrician", "hvac_services", "roofing", "painting", "landscaping", "handyman", "key_and_locksmith", "pest_control_service", "home_cleaning", "cleaning_services", "office_cleaning", "carpet_cleaning", "flooring_contractors", "building_contractor", "windows_installation", "garage_door_service", "appliance_repair_service", "pool_cleaning", "junk_removal_and_hauling", "movers", "masonry_contractors", "paving_contractor", "solar_installation", "septic_services", "air_duct_cleaning_service", "insulation_installation", "waterproofing", "altering_and_remodeling_contractor", "fence_and_gate_sales_service", "window_washing", "snow_removal_service", "industrial_cleaning_services"],
+
+  "trades": ["contractor", "plumbing", "electrician", "hvac_services", "roofing", "painting", "landscaping", "handyman", "key_and_locksmith", "pest_control_service", "flooring_contractors", "building_contractor", "windows_installation", "garage_door_service", "appliance_repair_service", "masonry_contractors", "paving_contractor", "solar_installation", "septic_services", "insulation_installation", "waterproofing", "altering_and_remodeling_contractor", "fence_and_gate_sales_service"],
+
+  "hotel": ["hotel", "resort", "bed_and_breakfast", "hostel", "motel", "guest_house", "inn"],
+
+  "insurance": ["insurance_agency", "auto_insurance", "life_insurance", "health_insurance_office", "home_and_rental_insurance", "pet_insurance", "farm_insurance"],
+
+  "staffing": ["employment_agencies"],
+
+  "construction": ["construction_services", "building_contractor", "contractor", "architectural_designer", "engineering_services", "architect", "construction_management", "masonry_contractors", "paving_contractor", "road_contractor", "altering_and_remodeling_contractor"],
+
+  "education": ["education", "elementary_school", "college_university", "preschool", "school", "tutoring_center", "educational_services", "driving_school", "day_care_preschool", "language_school", "music_school", "high_school", "private_school", "specialty_school", "vocational_and_technical_school", "art_school", "public_school", "middle_school", "religious_school", "adult_education", "dance_school"],
+
+  "supermarket": ["supermarket", "grocery_store", "convenience_store"],
+
+  "ngo": ["community_services_non_profits", "charity_organization"],
+
+  "fintech": ["financial_service", "bank_credit_union", "money_transfer_services", "banks", "financial_advising", "tax_services", "credit_union", "business_banking_service"],
+
+  "fmcg": ["wholesale_store", "wholesaler", "importer_and_exporter", "distribution_services", "food_beverage_service_distribution", "wholesale_grocer", "meat_wholesaler", "pharmaceutical_products_wholesaler", "produce_wholesaler", "seafood_wholesaler", "wine_wholesaler", "furniture_wholesalers", "fabric_wholesaler", "electrical_wholesaler", "computer_wholesaler", "importers", "exporters", "imported_food", "restaurant_wholesale", "book_magazine_distribution", "food_and_beverage_exporter"],
+
+  "restaurant": {
+    "category_match": "(^|_)restaurant$|^cafe$|^coffee_shop$|^bakery$|^desserts$|^food_truck$|^bar_or_pub$|^fast_food_restaurant$|^cafeteria$|^bistro$|^brasserie$|^diners$|^steakhouse$|^buffets$|^tea_room$|^juice_bar",
+    "_why": "158 distinct cuisine categories exist (italian_restaurant, lebanese_restaurant, sushi_restaurant, ...). Anchored suffix matching covers every one of them without enumerating a list that the next Overture release would immediately date, while the anchors keep out restaurant_wholesale and restaurant_supply_store."
+  }
+}

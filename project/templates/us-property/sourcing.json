@@ -3,6 +3,15 @@
   "max_per_run": 350,
   "sources": [
     {
+      "type": "overture",
+      "_note": "Overture Maps bulk POI (free, CDLA/Apache, no request ceiling). Added 2026-08-12. Categories come from tools/scripts/overture_presets.json via the target's vertical, so precision is shared by every campaign rather than re-derived per fixture. Listed FIRST because it is the highest-yield free source: ~half its rows already carry the business's own domain, so they enter the chain as candidates without Stage 2.5. See templates/README.md 'Overture sources'.",
+      "targets": [
+        {
+          "vertical": "property"
+        }
+      ]
+    },
+    {
       "type": "map",
       "targets": [
         {

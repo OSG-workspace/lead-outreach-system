@@ -105,6 +105,13 @@ pip install --quiet --upgrade pip
 echo "   Installing ddgs (DuckDuckGo)..."
 pip install --quiet ddgs
 
+echo "   Installing duckdb (Overture bulk POI source)..."
+# Stage 2's `overture` source adapter queries the Overture Maps parquet release
+# in place over S3. Without duckdb that source exits 8 ("no ground opened") and
+# the fire carries on with its other sources, so this is not fatal to install —
+# but every overture-sourced campaign is silently dry until it is present.
+pip install --quiet duckdb
+
 echo "   Installing crawl4ai + Playwright..."
 pip install --quiet crawl4ai
 playwright install chromium > /dev/null 2>&1 || {
