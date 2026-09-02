@@ -1,0 +1,97 @@
+{
+  "channels": [
+    "email",
+    "linkedin-email-lookup"
+  ],
+  "draft_mode": "template",
+  "vertical": null,
+  "countries": [
+    "ES",
+    "IT",
+    "FR",
+    "MC",
+    "PT",
+    "GR",
+    "DE",
+    "AT",
+    "CH",
+    "NL",
+    "BE",
+    "LU",
+    "CZ",
+    "HU",
+    "HR",
+    "SI",
+    "ME",
+    "TR",
+    "DK",
+    "SE",
+    "NO",
+    "FI",
+    "IS",
+    "IE",
+    "GB",
+    "PL",
+    "RO",
+    "SK",
+    "BG",
+    "MT",
+    "CY"
+  ],
+  "enrich_cap": null,
+  "target_roles": [],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "hotel-eu"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "hotel"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"tourism\"=\"hotel\"",
+            "vertical": "hotel"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "hotel",
+            "vertical": "hotel-eu"
+          },
+          {
+            "included_type": "resort_hotel",
+            "vertical": "hotel-eu"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "sources[3]._note: Deliberately EXCLUDES lodging/guest_house/bed_and_breakfast/hostel/motel: the ICP drops small B&Bs and guesthouses, so those types would flood the funnel with the disqualified segment."
+  ]
+}

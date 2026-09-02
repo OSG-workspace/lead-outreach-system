@@ -55,7 +55,23 @@ not modified and does not learn that outreach exists.
    later, each person's DM once they accept. `./linkedin-run status` shows the
    backlog, breakers and Chrome.
 
-## What the writer has to work with
+## The DM: the operator's fixed template (default when it exists)
+
+The user's directive (2026-09-02): **one exact DM for everyone, only the name
+varies.** Put that text in `project/templates/li-handoff/<brief>.dm.txt` with
+`{name}` where the first name goes (`{full_name}`, `{company}`, `{title}` are
+also allowed; nothing else is). When that file exists the handoff renders it
+per person and li-writer is not dispatched at all. A person with no value for
+a slot the template uses is skipped (`people-unrendered.json`), never sent a
+blank. The rendered entries carry `templated: true`, which is the only thing
+that turns off the queue's near-duplicate breaker — that breaker exists to
+catch a writer drifting into a template, not a template the operator chose.
+`--dm-template <file>` overrides the default path.
+
+**Ask for the exact text before the first live handoff**; never write that
+file from a paraphrase. `<brief>.dm.txt.example` shows the slot syntax.
+
+## What the writer has to work with (only when no template file exists)
 
 li-search never opens a profile, so there are no mutuals, no recent posts, no
 shared school. The li-batch file carries the person's name, title, company,

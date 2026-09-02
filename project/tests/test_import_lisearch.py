@@ -167,3 +167,57 @@ def test_snippet_reaches_the_writer_and_the_message_reaches_the_backlog(tmp_path
     assert backlog[0]["linkedinUrl"] == "https://www.linkedin.com/in/hala-j/"
     assert backlog[0]["message"].startswith("Hala, the 2011 note")
     assert backlog[0]["directMessageable"] is False
+
+
+# --- operator template mode (user directive 2026-09-02) ----------------------
+
+def test_render_fills_only_the_name_and_flags_the_records_as_templated(tmp_path):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "people-qualified.json").write_text(json.dumps([
+        {"full_name": "Hala Jaber", "profile_url": "https://www.linkedin.com/in/hala-j/", "company": "Special Events"},
+        {"full_name": "Dr. Khodr Alama", "profile_url": "https://www.linkedin.com/in/khodr-a/", "company": ""},
+        {"full_name": "", "profile_url": "https://www.linkedin.com/in/nobody/", "company": "X"},
+    ]))
+    tpl = tmp_path / "dm.txt"
+    tpl.write_text("Hi {name}, one fixed message for everyone. Ten minutes on a call?\n")
+    r = _run("draft_linkedin.py", "--phase", "render", "--run-dir", str(run), "--template", str(tpl))
+    assert r.returncode == 0, r.stdout + r.stderr
+    got = json.loads((run / "people-with-notes.json").read_text())
+    assert [g["message"].split(",")[0] for g in got] == ["Hi Hala", "Hi Khodr"]
+    assert all(g["templated"] is True for g in got)
+    assert got[0]["message"].endswith("Ten minutes on a call?")
+    unrendered = json.loads((run / "people-unrendered.json").read_text())
+    assert len(unrendered) == 1 and "no name" in unrendered[0]
+
+
+def test_render_refuses_unknown_slots_and_the_placeholder_file(tmp_path):
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "people-qualified.json").write_text(json.dumps(
+        [{"full_name": "Hala Jaber", "profile_url": "https://www.linkedin.com/in/hala-j/"}]))
+    tpl = tmp_path / "dm.txt"
+    tpl.write_text("Hi {name}, your {city} office...")
+    r = _run("draft_linkedin.py", "--phase", "render", "--run-dir", str(run), "--template", str(tpl))
+    assert r.returncode == 7, r.stdout            # rendered for nobody, unknown slot reported
+    assert "unknown slot" in (run / "people-unrendered.json").read_text()
+    tpl.write_text("Hi {name},\n<< PASTE THE EXACT DM HERE >>\n")
+    r = _run("draft_linkedin.py", "--phase", "render", "--run-dir", str(run), "--template", str(tpl))
+    assert r.returncode != 0 and "placeholder" in (r.stdout + r.stderr)
+
+
+def test_templated_flag_reaches_the_backlog(tmp_path):
+    rows = [_row("hala-j", "Hala Jaber", "Founder"), _row("naji-b", "Naji Boulos", "Owner")]
+    root = _li_search(tmp_path, rows, [_lead(r["linkedin_account"]) for r in rows])
+    state = _state(tmp_path)
+    run = tmp_path / "run"
+    env = {"LINKEDIN_STATE_DIR": str(state)}
+    assert _run("import_lisearch.py", "--brief", "test-brief", "--li-search-root", str(root),
+                "--run-dir", str(run), env=env).returncode == 0
+    tpl = tmp_path / "dm.txt"
+    tpl.write_text("Hi {name}, same text for everyone.")
+    assert _run("draft_linkedin.py", "--phase", "render", "--run-dir", str(run), "--template", str(tpl)).returncode == 0
+    assert _run("linkedin_queue.py", "--run-dir", str(run), env=env).returncode == 0
+    backlog = json.loads((state / "backlog.json").read_text())
+    assert len(backlog) == 2 and all(b["templated"] is True for b in backlog)
+    assert {b["message"] for b in backlog} == {"Hi Hala, same text for everyone.", "Hi Naji, same text for everyone."}

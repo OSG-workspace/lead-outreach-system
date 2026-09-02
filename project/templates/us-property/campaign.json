@@ -1,0 +1,62 @@
+{
+  "channels": [
+    "email"
+  ],
+  "draft_mode": "template",
+  "vertical": "property",
+  "countries": [
+    "US"
+  ],
+  "enrich_cap": null,
+  "target_roles": [],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "property-us"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "property"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"office\"=\"estate_agent\"",
+            "vertical": "property"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "real_estate_agency",
+            "vertical": "property-us"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "sources[3]._note: Table A has no property-management type; real_estate_agency is the closest and conflates sales brokerages with managers, the same imprecision the OSM selector already carries."
+  ]
+}

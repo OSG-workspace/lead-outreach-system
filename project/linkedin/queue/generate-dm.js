@@ -87,6 +87,7 @@ export function generateDmQueue({ limits, state, suppression, leads, now = new D
       profileUrl: url,
       message: lead.message.trim(),
       via: accepted ? 'accepted' : 'open-profile',
+      templated: lead.templated === true,   // see queue/generate.js
     });
   }
 
@@ -94,7 +95,7 @@ export function generateDmQueue({ limits, state, suppression, leads, now = new D
   const cap = limits.followUpDmsPerDay ?? 25;
   const selected = eligible.slice(0, cap);
 
-  const dupes = findNearDuplicates(selected.map((l) => l.message));
+  const dupes = findNearDuplicates(selected.filter((l) => !l.templated).map((l) => l.message));
   if (dupes.length) {
     const err = new Error(
       `messages are not materially different: ${dupes
@@ -134,6 +135,7 @@ export function leadsFromState(state) {
       score: l.score ?? 0,
       linkedinUrl: l.profileUrl,
       message: l.message,
+      templated: l.templated === true,
       directMessageable: true,      // an accepted invite IS the consent gate
     }));
 }

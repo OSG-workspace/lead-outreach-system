@@ -1,0 +1,90 @@
+{
+  "channels": [
+    "email"
+  ],
+  "draft_mode": "template",
+  "vertical": null,
+  "countries": [
+    "AE",
+    "SA",
+    "QA"
+  ],
+  "enrich_cap": null,
+  "target_roles": [],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 360,
+    "resolve_domains": true,
+    "resolve_query": "{name} {city} official website",
+    "resolve_max": 300,
+    "resolve_min_name_tokens": 2,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "realestate-gcc-o"
+          },
+          {
+            "vertical": "insurance-gcc-o"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "realestate"
+          },
+          {
+            "vertical": "education"
+          },
+          {
+            "vertical": "insurance"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"office\"=\"estate_agent\"",
+            "vertical": "realestate"
+          },
+          {
+            "selector": "\"amenity\"~\"college|language_school|driving_school\"",
+            "vertical": "education"
+          },
+          {
+            "selector": "\"office\"=\"insurance\"",
+            "vertical": "insurance"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "real_estate_agency",
+            "vertical": "realestate-gcc-o"
+          },
+          {
+            "included_type": "insurance_agency",
+            "vertical": "insurance-gcc-o"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "GCC outreach-system campaign, built from the 2026-07-27 GTM research. UAE-first: Dubai + Sharjah real estate brokerage is the beachhead (measured 2026-07-27: 529 named brokerages across the two, only 47 with a website tag, 482 name-only — which is why resolve_domains is ON). Education and insurance follow as Tier-2. KSA cities trail the UAE ones. NOTE: the research's other Tier-1 vertical (Salla/Zid COD merchants) is NOT sourceable here — online stores have no OSM presence at all.",
+    "sources[3]._note: The education target (language/driving schools) has no Table A type; generic school would source a different population, so it stays OSM-only."
+  ]
+}

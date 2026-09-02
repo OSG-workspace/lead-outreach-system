@@ -1,0 +1,74 @@
+{
+  "channels": [
+    "email",
+    "whatsapp",
+    "whatsapp-fallback"
+  ],
+  "draft_mode": "template",
+  "vertical": null,
+  "countries": [
+    "LB"
+  ],
+  "enrich_cap": null,
+  "target_roles": [
+    "Chairman",
+    "CEO",
+    "Owner",
+    "General Manager",
+    "Deputy General Manager",
+    "Head of Compliance",
+    "MLRO",
+    "Money Laundering Reporting Officer",
+    "COO"
+  ],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "fintech-lb"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "fintech"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"amenity\"=\"bank\"",
+            "vertical": "fintech"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "bank",
+            "vertical": "fintech-lb"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "sources[3]._note: bank covers branch premises, which OSM already maps well. Money-transfer/e-payment fintechs and compliance departments are not Places-expressible."
+  ]
+}

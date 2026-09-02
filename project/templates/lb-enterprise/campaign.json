@@ -1,0 +1,43 @@
+{
+  "channels": [
+    "whatsapp"
+  ],
+  "draft_mode": "custom",
+  "vertical": "enterprise",
+  "countries": [
+    "LB"
+  ],
+  "enrich_cap": null,
+  "target_roles": [],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"office\"=\"company\"",
+            "vertical": "enterprise"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "corporate_office",
+            "vertical": "enterprise-lb"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "sources[1]._note: corporate_office IS Table A (Business). It carries no size or prominence facet, so it cannot express the 'biggest Lebanese companies' ICP by itself; the 150-request cap and the ICP gates downstream bound the noise."
+  ]
+}

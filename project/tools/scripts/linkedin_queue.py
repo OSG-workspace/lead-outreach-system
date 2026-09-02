@@ -305,6 +305,10 @@ def main() -> None:
             # INVITE so the module can store it and send it if and when the
             # invite is accepted, days or weeks later — see queue/generate.js.
             **({"message": p["message"]} if p.get("message") else {}),
+            # Set only by draft_linkedin.py --phase render: the operator fixed
+            # the DM text and only the name varies. generate.js skips its
+            # near-duplicate check for these and for nothing else.
+            **({"templated": True} if p.get("templated") else {}),
             "degree": p.get("degree"),
             "openProfile": bool(p.get("open_profile")),
             # An Open Profile member or an existing connection needs no invite at

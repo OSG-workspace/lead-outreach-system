@@ -1,0 +1,66 @@
+{
+  "channels": [
+    "email"
+  ],
+  "draft_mode": "template",
+  "vertical": null,
+  "countries": [],
+  "enrich_cap": null,
+  "target_roles": [],
+  "fetch_pages": [
+    "home|/",
+    "contact|/contact",
+    "about|/about"
+  ],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "auto-gcc"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "auto"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"shop\"=\"car\"",
+            "vertical": "auto"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "car_dealer",
+            "vertical": "auto-gcc"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "fetch_pages: Stage 4 page-list override for gcc-auto (see fetch_html.py module docstring).",
+    "fetch_pages: Same reasoning as au-trades: auto repair / auto-service businesses are",
+    "fetch_pages: small owner-operator shops, not organizations with leadership/people pages."
+  ]
+}

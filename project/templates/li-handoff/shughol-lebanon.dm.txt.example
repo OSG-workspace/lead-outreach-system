@@ -1,0 +1,7 @@
+Hi {name},
+
+<< PASTE THE EXACT DM HERE, then save this file as shughol-lebanon.dm.txt (drop ".example") >>
+
+Slots you can use, all optional: {name} (first name), {full_name}, {company}, {title}.
+Everything else is sent byte-for-byte as written. Plain text only, under 1900 characters.
+A person with no value for a slot the template uses is skipped, not sent a blank.

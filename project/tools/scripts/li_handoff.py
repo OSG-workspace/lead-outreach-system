@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """The li-search -> LinkedIn outreach handoff, end to end, in one command.
 
-    ./linkedin-run handoff <brief> [--take N] [--plan] [--no-writer]
+    ./linkedin-run handoff <brief> [--take N] [--plan] [--dm-template <file>]
 
 WHAT IT RUNS, IN ORDER
   1. import_lisearch.py   li-search's delivered pool -> a run folder
   2. draft_linkedin.py --phase batch     one li-batch file per person
-  3. li-writer (headless claude -p, parallel)   one custom DM per person
+  3. EITHER render the operator's fixed DM (templates/li-handoff/<brief>.dm.txt,
+     only {name} varies) — the default whenever that file exists —
+     OR li-writer (headless claude -p, parallel), one custom DM per person
   4. draft_linkedin.py --phase merge     DMs back onto the person records
   5. linkedin_queue.py    rank, suppress, and MERGE INTO linkedin/state/backlog.json
   6. queue/generate.js    today's ramp-cap of invites, so the sender has work
@@ -96,6 +98,10 @@ def main() -> None:
     ap.add_argument("--config", default="{}")
     ap.add_argument("--max-workers", type=int, default=6)
     ap.add_argument("--writer-timeout", type=int, default=420)
+    ap.add_argument("--dm-template",
+                    help="the operator's exact DM with {name} slots; rendered per person "
+                         "INSTEAD of li-writer. Default: templates/li-handoff/<brief>.dm.txt "
+                         "when that file exists, else li-writer composes per person.")
     ap.add_argument("--plan", action="store_true", help="print every stage, run nothing")
     ap.add_argument("--no-writer", action="store_true",
                     help="skip li-writer (for tests, or when li-out/ is already filled by hand)")
@@ -124,15 +130,29 @@ def main() -> None:
     if rc == 7:
         print("\nHANDOFF: nothing new to hand over — the channel already holds everyone delivered.")
         return
-    sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "batch", "--run-dir", str(run)],
-       "Stage 8.6 LI batch")
-    if not a.no_writer:
-        write_dms(run, a.max_workers, a.writer_timeout)
-    rc = sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "merge", "--run-dir", str(run)],
-            "Stage 8.6 LI merge", tolerate=(7,))
-    if rc == 7:
-        sys.exit("ABORT: li-writer composed no messages — nothing was queued. "
-                 "Check li-out/ and the pitch, then re-run.")
+    template = Path(a.dm_template) if a.dm_template else \
+        (PROJECT / "templates" / "li-handoff" / f"{a.brief}.dm.txt" if a.brief else None)
+    if template and template.exists():
+        # The operator fixed the DM text; only the name varies. No writer runs.
+        print(f"\n=== DM mode: operator template {template} (li-writer NOT dispatched)")
+        rc = sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "render", "--run-dir", str(run),
+                 "--template", str(template)], "Stage 8.6 LI render", tolerate=(7,))
+        if rc == 7:
+            sys.exit("ABORT: the template rendered for nobody — see people-unrendered.json")
+    else:
+        if a.dm_template:
+            sys.exit(f"ABORT: --dm-template {a.dm_template} does not exist")
+        print("\n=== DM mode: li-writer composes one message per person "
+              "(no templates/li-handoff/<brief>.dm.txt found)")
+        sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "batch", "--run-dir", str(run)],
+           "Stage 8.6 LI batch")
+        if not a.no_writer:
+            write_dms(run, a.max_workers, a.writer_timeout)
+        rc = sh([PY, "tools/scripts/draft_linkedin.py", "--phase", "merge", "--run-dir", str(run)],
+                "Stage 8.6 LI merge", tolerate=(7,))
+        if rc == 7:
+            sys.exit("ABORT: li-writer composed no messages — nothing was queued. "
+                     "Check li-out/ and the pitch, then re-run.")
     li_cfg = (run / "linkedin.json").read_text() if (run / "linkedin.json").exists() else "{}"
     sh([PY, "tools/scripts/linkedin_queue.py", "--run-dir", str(run), "--config", li_cfg],
        "Stage 8.6 LI rank -> backlog")

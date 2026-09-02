@@ -44,8 +44,8 @@ def done_line(res: Dict[str, Any]) -> str:
     prov = ",".join("%s:%s" % (k, ("STOPPED" if k in res.get("stopped", {}) else
                                    "skip" if k in res.get("skipped", []) else v))
                     for k, v in res["providers"].items())
-    return ("DONE: %s — kept=%d qualified=%d new=%d unique=%d excluded=%d providers=%s"
-            % (res["audience"], len(res["leads"]), res["qualified"], res["new"],
+    return ("DONE: %s — kept=%d qualified=%d strong=%d new=%d unique=%d excluded=%d providers=%s"
+            % (res["audience"], len(res["leads"]), res["qualified"], res.get("strong", 0), res["new"],
                res["unique"], res["excluded"], prov))
 
 SOURCE_WEIGHT = {"exa": 1.0, "coresignal": 1.0, "pdl": 0.95, "ddgs": 0.7, "delivered": 0.7, "openweb": 0.55}
@@ -141,6 +141,38 @@ def person_hit(lead: Dict[str, Any], a: aud.Audience) -> Tuple[str, str]:
     return "", ""
 
 
+_STOP = {"and", "the", "of", "for", "with", "firm", "company", "house", "shop", "shops",
+         "services", "service", "solutions", "group", "management"}
+
+
+def industry_words(a: aud.Audience) -> List[str]:
+    """The individual words of the industry + keywords, minus glue words —
+    what a headline actually carries ('Founder, Lemonade Digital' never says
+    'digital marketing agency', but it does say 'digital')."""
+    out: List[str] = []
+    for s in a.subjects():
+        for w in _fold(s).split():
+            if len(w) >= 4 and w not in _STOP and w not in out:
+                out.append(w)
+    return out
+
+
+def strength(lead: Dict[str, Any], a: aud.Audience) -> str:
+    """'strong' when the industry is visible in the title, company or name —
+    or the row is brief-seeded; 'weak' when the only industry evidence is the
+    person's posts (the snippet), which is where a restaurant owner who wrote
+    about an event comes from."""
+    m = lead.get("match") or ""
+    if m.startswith("person=") or "company:" in m:
+        return "strong"
+    head = _fold(" ".join([lead.get("title") or "", lead.get("company") or "",
+                           lead.get("full_name") or ""]))
+    for w in industry_words(a):
+        if re.search(r"(?<![a-z0-9])%s" % re.escape(w), head):
+            return "strong"
+    return "weak"
+
+
 def qualify(lead: Dict[str, Any], a: aud.Audience) -> None:
     """Stamp `qualified` and `match` on the lead. Qualified means the row shows,
     in its own text, all three parts of the stored specification: an
@@ -156,6 +188,7 @@ def qualify(lead: Dict[str, Any], a: aud.Audience) -> None:
         # The brief named this person AND the row corroborates it.
         lead["qualified"] = True
         lead["match"] = "person=%s;via=%s" % (person, how) + ("" if not t else ";title=%s" % t[1])
+        lead["strength"] = "strong"
         return
     if person:
         parts.append("person?=%s" % person)      # namesake: candidate only
@@ -169,6 +202,7 @@ def qualify(lead: Dict[str, Any], a: aud.Audience) -> None:
     need_ind = bool(a.subjects())
     lead["qualified"] = bool(t) and (bool(g) or not need_geo) and (bool(kws) or not need_ind)
     lead["match"] = ";".join(parts) or "-"
+    lead["strength"] = strength(lead, a) if lead["qualified"] else ""
 
 
 def score(lead: Dict[str, Any], a: aud.Audience) -> float:
@@ -363,7 +397,7 @@ def fire(
     for l in kept:
         qualify(l, a)
         l["score"] = score(l, a)
-    kept.sort(key=lambda l: (not l["qualified"], -l["score"],
+    kept.sort(key=lambda l: (not l["qualified"], l.get("strength") != "strong", -l["score"],
                              l.get("full_name") or l["linkedin_account"]))
     kept = kept[:limit]
 
@@ -380,6 +414,7 @@ def fire(
         "excluded": dropped_excl,
         "suppressed": dropped_sup,
         "qualified": sum(1 for l in kept if l["qualified"]),
+        "strong": sum(1 for l in kept if l.get("strength") == "strong"),
         "leads": kept,
         # Excluded rows travel with the run so a later spec change can bring
         # them back with their merged history intact. Not in csv/accounts.
@@ -432,7 +467,7 @@ def fire(
     return result
 
 
-CSV_FIELDS = ["linkedin_account", "qualified", "match", "full_name", "title", "company",
+CSV_FIELDS = ["linkedin_account", "qualified", "strength", "match", "full_name", "title", "company",
               "location", "country", "email", "linkedin_url", "score", "sources",
               "freshness", "collected_at", "eu_flag"]
 

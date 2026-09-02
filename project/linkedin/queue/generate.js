@@ -102,6 +102,13 @@ export function generateQueue({
       profileUrl: url,
       note: withNotes ? lead.note.trim() : null,
       message: msg,
+      // OPERATOR-CHOSEN TEMPLATE (2026-09-02 directive). The uniqueness check
+      // below exists to catch a writer that DRIFTED into a template by
+      // accident. A message the operator deliberately fixed, with only the
+      // name varying, is not drift, and the flag is set by the renderer
+      // (draft_linkedin.py --phase render), never by a writer agent. It is
+      // carried into state so generate-dm.js weeks later knows the same.
+      templated: lead.templated === true,
     });
   }
 
@@ -113,7 +120,8 @@ export function generateQueue({
   // Uniqueness is enforced on whatever text actually goes out. With no note on
   // the invite, that is the follow-up DM — checking it here, at queue time,
   // means a templated batch is caught before a single invite is spent on it.
-  const checked = withNotes ? selected.map((l) => l.note) : selected.map((l) => l.message);
+  const free = selected.filter((l) => !l.templated);
+  const checked = withNotes ? free.map((l) => l.note) : free.map((l) => l.message);
   const dupes = findNearDuplicates(checked);
   if (dupes.length) {
     const err = new Error(

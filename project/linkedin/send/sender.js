@@ -302,6 +302,7 @@ async function main() {
             leadId: entry.leadId, name: entry.name, note: entry.note,
             message: entry.message ?? null, company: entry.company ?? null,
             companyDomain: entry.companyDomain ?? null,
+            templated: entry.templated === true,
           });
           saveState(paths.state, state);
 

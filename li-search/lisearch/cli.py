@@ -276,17 +276,17 @@ def cmd_suppress(args) -> int:
 
 
 def cmd_export(args) -> int:
-    res = export(args.name, csvlist(args.audiences), args.take)
+    res = export(args.name, csvlist(args.audiences), args.take, min_strength=args.strength)
     print("EXPORT %s: batch %d, %d delivered, %d total in owners.csv, %d qualified still undelivered"
           % (args.name, res["batch"], res["delivered"], res["total"], res["remaining"]))
     print("dir: %s" % res["dir"])
     if args.table:
-        print("| # | Audience | LinkedIn account | Name | Title | Company |")
-        print("|---|---|---|---|---|---|")
+        print("| # | Audience | S | LinkedIn account | Name | Title | Company |")
+        print("|---|---|---|---|---|---|---|")
         for r in res["rows"]:
-            print("| %s | %s | %s | %s | %s | %s |" % (
-                r["n"], r["audience"].replace("lb-", "")[:22], r["linkedin_account"],
-                r["full_name"], (r["title"] or "—")[:38], (r["company"] or "—")[:30]))
+            print("| %s | %s | %s | %s | %s | %s | %s |" % (
+                r["n"], r["audience"].replace("lb-", "")[:22], (r.get("strength") or "")[:1].upper(),
+                r["linkedin_account"], r["full_name"], (r["title"] or "—")[:38], (r["company"] or "—")[:30]))
     return 0
 
 
@@ -365,6 +365,8 @@ def main(argv=None) -> int:
     e.add_argument("--audiences", required=True, help="comma list of audience slugs, priority order")
     e.add_argument("--take", type=int, default=50)
     e.add_argument("--table", action="store_true", help="also print the batch as a markdown table")
+    e.add_argument("--strength", default="", choices=["", "strong"],
+                   help="'strong' delivers only rows whose industry shows in title/company/name (or brief-seeded)")
     e.set_defaults(fn=cmd_export)
 
     c = sub.add_parser("cache", help="inspect or clear the cache")

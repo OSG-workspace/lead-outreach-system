@@ -17,7 +17,7 @@ qualify gate), **edit the fixture in this folder** — not a past run under `run
 | `gcc-auto/` | GCC consumer chains | template | email |
 | `gcc-receptionist/` | GCC AI receptionist — Riyadh-first owner-operated clinics, salons, brokerages, home services, restaurants, car service | template | email |
 | `gcc-outreach/` | GCC outreach-system — Dubai/Sharjah real-estate brokerages first, then education + insurance | template | email |
-| `gcc-outreach-li/` | Same GCC outreach ICP, LinkedIn arm — queues invites + custom DMs, sends nothing during the fire (`linkedin.json`, `li_max_per_company.txt`) | template (DMs are per-person) | linkedin |
+| `gcc-outreach-li/` | Same GCC outreach ICP, LinkedIn arm — queues invites + custom DMs, sends nothing during the fire (`linkedin` block in campaign.json) | template (DMs are per-person) | linkedin |
 | `li-handoff/` | **Not a fire fixture.** `<brief>.pitch.json` angles read by li-writer when `./linkedin-run handoff <brief>` queues li-search's delivered people | — | linkedin |
 | `eu-hotels/` | Big hotels, 31-country EU+ footprint (AI receptionist) | template | email |
 | `lb-enterprise/` | Biggest Lebanese companies | custom | whatsapp |
@@ -33,7 +33,7 @@ qualify gate), **edit the fixture in this folder** — not a past run under `run
 | `lb-ngos/` | Lebanon NGOs & international organizations (donor-reporting angle) | template | email |
 | `gcc-agencies/` | GCC independent marketing agencies (digital-employee angle) | template | email |
 
-## THE general fixture structure (one chain — a new campaign is ONLY a new folder)
+## THE fixture contract: five files (one chain — a new campaign is ONLY a new folder)
 
 Every fixture has the SAME file set with the same meaning; the pipeline never
 grows a campaign-specific path. Adding a new campaign type = adding one small
@@ -41,33 +41,55 @@ branch to this tree (a `templates/<base>/` folder), zero code changes:
 
 ```
 templates/<base>/
+  campaign.json    REQUIRED  every knob, one file (schema below)
   icp.yaml         REQUIRED  target definition (the human-readable WHAT)
-  sourcing.json    REQUIRED  the Stage-2 sourcing contract (the machine HOW):
-                             {"method":"map","selector":"\"office\"=\"lawyer\"",
-                              "vertical":"law","max_per_run":350}
-  countries.txt              ISO-2 country filter for merge (absent → GCC default)
-  draft_mode.txt             template | custom            (absent → template)
-  channels.json              ["email"] and/or "whatsapp"  (absent → email)
-  pitch.json                 REQUIRED for template mode — the user-approved copy
-  vertical.txt               REQUIRED for custom mode
-  qualify.json               optional per-run qualify gate (e.g. hotel size/volume)
-  target_roles.txt           optional: comma-separated priority job titles for
-                             Stage 5.5 (e.g. "Head of Compliance, MLRO, COO")
-                             when the decision-maker isn't the generic
-                             founder/CEO/owner/GM — appended to every
-                             name-finder dispatch as a `TargetRoles:` line
-  places.txt                 map method, optional: City|ISO2|lat|lon|half_width
-                             (absent → built-in 195-city EU table)
-  enrich_cap.txt             optional top-N override for Stage 5.3 (default 400)
-  linkedin.json              LinkedIn runs only: per-company walk settings
+  pitch.json       REQUIRED for template mode with an email or linkedin channel —
+                             the user-approved copy (TEMPLATE-FIRST, below)
+  places.txt       REQUIRED whenever sourcing uses gmaps / overture / places:
+                             City|ISO2|lat|lon|half_width_deg, one per line
+                             (a map-only fixture may rely on `countries` + the
+                             built-in EU city table instead)
+  qualify.json               optional per-campaign qualify gate (e.g. hotel size)
 ```
 
 Only these files are fixture files. Research notes (`brief.md`, `targeting.md`)
-are not read by any stage and do not belong in a fixture.
+are not read by any stage and do not belong in a fixture; free prose about the
+campaign goes in `campaign.json` → `notes`.
+
+**How it reaches the stages.** No stage script reads `campaign.json`. On every
+fire `fire_campaign.sh` runs `tools/scripts/campaign_config.py --validate` (one
+schema, one ABORT line per problem) and then `--materialize runs/<slug>`, which
+writes the per-file layout the stages have always read (`sourcing.json`,
+`channels.json`, `draft_mode.txt`, …) into the fresh run folder, copies the four
+content files verbatim, and copies `campaign.json` itself so the run records its
+source. A knob at its default is simply not written. So a run folder stays
+self-documenting and byte-identical to what the old per-file fixtures produced.
+A fixture that still has the legacy per-file layout (no `campaign.json`) loads
+the same way; `tools/scripts/migrate_fixture.py <base>` converts it.
+
+### campaign.json schema (`campaign_config.SCHEMA`)
+
+| key | type | default | materialised as | read by |
+|---|---|---|---|---|
+| `channels` | list of `email` · `whatsapp` · `whatsapp-fallback` · `linkedin` · `linkedin-email-lookup` | `["email"]` | `channels.json` | `run_fire.py` channel arms |
+| `draft_mode` | `template` \| `custom` | `template` | `draft_mode.txt` | `run_fire.py` Stage 6 drafter choice |
+| `vertical` | string \| null — **required iff** `draft_mode=custom` | `null` | `vertical.txt` | fire validation |
+| `countries` | list of ISO-2 (or `"*"` = worldwide) | `[]` (→ GCC default / icp geography) | `countries.txt` | `merge_candidates.py` country filter; `source_overpass.py` built-in table |
+| `enrich_cap` | int \| null | `null` (chain default 400) | `enrich_cap.txt` | `run_fire.py` → `ENRICH_MAX_LEADS` for `qualify_leads.py` |
+| `target_roles` | list of job titles | `[]` | `target_roles.txt` (one comma-joined line) | `enrich_contact_person.py` → `TargetRoles:` line per name-finder batch |
+| `fetch_pages` | list of `slug\|path` | `[]` (built-in page list) | `fetch_pages.txt` | `fetch_html.py load_pages()` |
+| `linkedin` | object \| null — **required iff** `linkedin` ∈ channels | `null` | `linkedin.json` | `run_fire.py` → `qualify_people.py --config`; `li_handoff.py` |
+| `li_max_per_company` | int \| null | `null` (chain default 3) | `li_max_per_company.txt` | `run_fire.py` Stage 8.6 walk |
+| `li_max_people` | int \| null | `null` (chain default 60) | `li_max_people.txt` | `run_fire.py` Stage 8.6 / 8.6b |
+| `sourcing` | object — **required**; the exact Stage-2 contract (`selector`+`vertical`, `targets`, or `sources`, see below) | — | `sourcing.json` | `run_fire.py resolve_sourcing()` → every `source_*.py`, `resolve_domains.py` |
+| `notes` | list of strings | `[]` | **never** | nobody — fixture-specific facts and measurements |
+
+`_note` / `_comment` keys inside `sourcing` or `linkedin` are stripped before
+materialising; put that prose in `notes`. `campaign_config.py --fixture
+templates/<base> --show` prints the resolved config.
 
 The routing phrase → fixture map lives in `../CLAUDE.md` (plus a generic rule:
-naming any existing fixture base fires it — no table edit needed). The whole
-fixture is cloned into a fresh dated `runs/` folder on every fire.
+naming any existing fixture base fires it — no table edit needed).
 
 ## Creating a new campaign (one command)
 
@@ -76,11 +98,36 @@ python3 tools/scripts/new_campaign.py --base us-hvac --vertical hvac \
     --countries US --selector '"shop"="hvac"'
 ```
 
-This writes the complete structure above and prints the exact remaining
-blockers (approved `pitch.json` copy, real places, ICP criteria).
-Firing a half-finished fixture always aborts loudly naming the missing file —
-the chain treats every campaign identically, whatever its channels, draft mode,
-or geography.
+This writes `campaign.json` + `icp.yaml` (+ a `places.txt` stub when the
+built-in city table does not cover the countries) and prints the exact remaining
+blockers straight from the same `validate()` the fire runs (approved `pitch.json`
+copy, real places, ICP criteria). Firing a half-finished fixture always aborts
+loudly naming the missing piece — the chain treats every campaign identically,
+whatever its channels, draft mode, or geography.
+
+## Why the source ladder is ordered gmaps → overture → map → places
+
+This used to be pasted verbatim into every fixture's `sourcing.json`; it is a
+fact about the stack, not about any one campaign, so it lives here once.
+
+- **`gmaps` first.** Google Maps enumerated directly via the gosom scraper binary
+  (free, already installed by `tools/install.sh`). It is the highest-yield source
+  measured on this stack: one Wollongong sweep over 5 trade terms returned 124
+  candidates ALREADY carrying a domain in ~2 minutes, against 111 for the whole
+  `2026-08-17-au-trades-1` run from every other source plus 73 minutes of Stage
+  2.5. Terms and the category denylist come from `tools/scripts/gmaps_presets.json`
+  via each target's vertical, so precision is shared by every campaign rather than
+  restated per fixture. TRADEOFF, on purpose: scraping Maps is contrary to
+  Google's ToS, unlike the paid `places` source. See `source_gmaps.py`.
+- **`overture` second.** Overture Maps bulk POI (free, CDLA/Apache, no request
+  ceiling), added 2026-08-12. Categories come from
+  `tools/scripts/overture_presets.json` via the target's vertical. ~Half its rows
+  already carry the business's own domain, so they enter the chain as candidates
+  without Stage 2.5. See "Overture sources" below.
+- **`map` = each campaign's original OSM config, unchanged**, and **`places` was
+  added 2026-08-10** so a swept OSM ledger no longer means a zero-candidate fire.
+  See "Places sources" below for the Table A / budget / ledger-scoping rules that
+  govern every fixture's places block.
 
 ## Keeping lead volume up
 
@@ -92,7 +139,7 @@ vertical). So consecutive fires open fresh ground on their own, and a fire that
 reports `0 candidates` is a supply signal: add `places.txt` rows, widen the
 selector, or add a source — there is no query pool or query ledger to rotate.
 
-## Choosing the sourcing method in sourcing.json
+## Choosing the sourcing method (`campaign.json` → `sourcing`)
 
 Sourcing is deterministic enumeration for EVERY campaign — no agents, no tokens.
 The agent-per-query `"search"` method was retired 2026-08-05 along with its
@@ -257,7 +304,7 @@ Google's taxonomy but invalid as an `included_type`, so a construction fixture
 using it would break on every fire. Types with no Table A equivalent at all
 (HVAC, pest control, counselling/psychotherapy, language/driving schools beyond
 the generic `school`) simply cannot be sourced this way; use the closest honest
-type or leave that sub-vertical to OSM, and say so in the fixture's `_comment`.
+type or leave that sub-vertical to OSM, and say so in the fixture's `notes`.
 
 **2. `max_requests` is a HARD per-fixture cap, and it exists for money.**
 `FREE_REQUESTS["pro"]` is 5,000 — but that is Google's **monthly allowance for

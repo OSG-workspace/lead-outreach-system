@@ -399,7 +399,7 @@ class TestSessionArtifacts(unittest.TestCase):
             self.assertEqual(summ["top"][0]["account"], "someone")
             self.assertIn("DONE: artifact-probe", (run / "status.txt").read_text())
             line = F.done_line(res)
-            self.assertIn("kept=1 qualified=1 new=1", line)
+            self.assertIn("kept=1 qualified=1 strong=1 new=1", line)
             self.assertIn("providers=fake:1", line)
         finally:
             F.RUNS, F.build = orig_runs, orig_build
@@ -484,3 +484,15 @@ class TestExclusionScope(unittest.TestCase):
         self.assertTrue(excluded(make_lead("ddgs", "b", title="Founder", company="Beirut Hotel"), a))
         self.assertTrue(excluded(make_lead("ddgs", "c", title="HR Business Partner"), a))
         self.assertFalse(excluded(make_lead("ddgs", "d", title="Managing Partner"), a))
+
+
+class TestStrength(unittest.TestCase):
+    def test_industry_in_headline_is_strong_posts_only_is_weak(self):
+        from lisearch.fire import qualify
+        a = aud.new_audience("t", industry="digital marketing agency", countries=["LB"], keywords=["PR agency"])
+        strong = make_lead("ddgs", "a", full_name="X", title="Founder", company="Lemonade Digital", country="LB",
+                           summary="a digital marketing agency in Beirut")
+        qualify(strong, a); self.assertEqual(strong["strength"], "strong")
+        weak = make_lead("ddgs", "b", full_name="Y", title="Owner", company="Nouna Resto", country="LB",
+                         summary="we hosted a digital marketing agency event")
+        qualify(weak, a); self.assertTrue(weak["qualified"]); self.assertEqual(weak["strength"], "weak")

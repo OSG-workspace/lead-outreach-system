@@ -1,0 +1,68 @@
+{
+  "channels": [
+    "email"
+  ],
+  "draft_mode": "template",
+  "vertical": null,
+  "countries": [
+    "*"
+  ],
+  "enrich_cap": null,
+  "target_roles": [],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "clinic-ww"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "clinic"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"amenity\"~\"clinic|dentist|doctors\"",
+            "vertical": "clinic"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "medical_clinic",
+            "vertical": "clinic-ww"
+          },
+          {
+            "included_type": "dentist",
+            "vertical": "clinic-ww"
+          },
+          {
+            "included_type": "doctor",
+            "vertical": "clinic-ww"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": []
+}

@@ -51,7 +51,7 @@ Fire phrases (any session, no slash command): "fire … run", "fire it", "fire t
 ### New-campaign contract (TEMPLATE-FIRST)
 
 The system never invents email copy at fire time. For a vertical with no `templates/<base>/`:
-0. `python3 tools/scripts/new_campaign.py --base <base> --vertical <v> --countries <ISO2,…> --selector '<osm selector>'` scaffolds the fixture and prints what still blocks a fire.
+0. `python3 tools/scripts/new_campaign.py --base <base> --vertical <v> --countries <ISO2,…> --selector '<osm selector>'` scaffolds the fixture (`campaign.json` = every knob, `icp.yaml`, `places.txt` stub) and prints what still blocks a fire. A fixture is exactly `campaign.json` + `icp.yaml` + `pitch.json` + `places.txt` [+ `qualify.json`] — schema in `templates/README.md`.
 1. Ask for their email template; if they have one, store it verbatim as `templates/<base>/pitch.json` (`subject_template` + `body_template`; slots `{salutation}` `{name}`, optionally `{opener}` `{vertical}` `{country}`).
 2. If none, draft 2-3 non-generic examples (no em/en dashes, no banned words per `vault/lead-outreach/voice-us.md`, evidence-shaped opener, one CTA, one link) and offer them via `AskUserQuestion`. **Never wire a template the user has not confirmed.**
 3. Offer refinement; the saved `pitch.json` is then FIXED copy.
@@ -65,7 +65,7 @@ cd <your-checkout>/project
 bash tools/scripts/fire_campaign.sh <SLUG_BASE>     # --dry-run drafts only · --plan traces · --target-leads N
 ```
 
-**A lead volume in the phrase ("100 leads", "send to 30") → `--target-leads N`:** sourcing scales to ~N qualified leads, the send caps at N, and a shortfall is reported in `status.txt` + the DONE line — relay it. `fire_campaign.sh` validates the fixture (icp + sourcing; `pitch.json` for template mode, `vertical.txt` for custom), clones it into a new dated folder and hands off to `run_fire.py`. A missing file ABORTs naming it — the only case where you stop and talk to the user.
+**A lead volume in the phrase ("100 leads", "send to 30") → `--target-leads N`:** sourcing scales to ~N qualified leads, the send caps at N, and a shortfall is reported in `status.txt` + the DONE line — relay it. `fire_campaign.sh` validates the fixture (`campaign_config.py --validate`: `campaign.json` schema + `icp.yaml`; `pitch.json` for template mode, `vertical` for custom, `places.txt` for gmaps/overture/places sources), materialises `campaign.json` into the per-file layout inside a new dated run folder and hands off to `run_fire.py`. A missing piece ABORTs naming it — the only case where you stop and talk to the user.
 
 **LinkedIn runs (`channels.json` has `"linkedin"`) end differently — say so.** A LinkedIn fire **queues, it does not send** (8-18 invites/day, 90/week; one fire loads weeks of supply into `linkedin/state/backlog.json`), so `drafted=0` / "sent 0" are CORRECT. `preflight.js` runs first — relay its `fix:` line if it aborts (usually `bash linkedin/scripts/start_chrome.sh`). Send side: `cd project/linkedin && bash scripts/daily.sh --live`. Report N queued, M messageable today, weeks of backlog.
 
@@ -73,7 +73,7 @@ bash tools/scripts/fire_campaign.sh <SLUG_BASE>     # --dry-run drafts only · -
 
 ### When to ASK instead of firing
 
-The ONLY reasons to pause: bare phrase with no target (ask which campaign) · bare "lebanon"/"lb" (ask `lb-enterprise` WhatsApp vs `lb-receptionist` email; "lebanese run" alone → `lb-enterprise`) · named target has no fixture with `icp.yaml` + `sourcing.json` (set it up, then fire) · `vault/lead-outreach/sent-log.md` missing (bootstrap the vault) · "dry-run"/"preview" (still a NEW dated run, launched at once with `--dry-run`).
+The ONLY reasons to pause: bare phrase with no target (ask which campaign) · bare "lebanon"/"lb" (ask `lb-enterprise` WhatsApp vs `lb-receptionist` email; "lebanese run" alone → `lb-enterprise`) · named target has no fixture with `campaign.json` + `icp.yaml` (set it up, then fire) · `vault/lead-outreach/sent-log.md` missing (bootstrap the vault) · "dry-run"/"preview" (still a NEW dated run, launched at once with `--dry-run`).
 
 ## VERIFY AGAINST THE LAST RUN BEFORE ASSERTING ANYTHING (user directive 2026-07-31)
 

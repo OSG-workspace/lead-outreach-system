@@ -26,6 +26,7 @@ independently rejects the batch if two messages come out near-identical.
 from __future__ import annotations
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -170,9 +171,82 @@ def merge(run: Path, work: Path | None = None) -> int:
     return len(merged)
 
 
+MAX_DM_CHARS = 1900          # same ceiling generate-dm.js enforces
+SLOT_RE = re.compile(r"\{([a-z_]+)\}")
+KNOWN_SLOTS = {"name", "first_name", "full_name", "company", "title"}
+
+
+def first_name(full: str) -> str:
+    """First whitespace-separated token, honorifics dropped. A one-token name is
+    used whole. Arabic names are the common case here, so nothing cleverer
+    than position is attempted."""
+    toks = [t for t in re.split(r"\s+", (full or "").strip()) if t]
+    while toks and toks[0].rstrip(".").lower() in {"mr", "mrs", "ms", "dr", "eng", "prof"}:
+        toks.pop(0)
+    return toks[0].strip(",") if toks else ""
+
+
+def render_one(template: str, p: dict) -> tuple[str | None, str | None]:
+    """-> (message, None) or (None, reason). Only the operator's slots vary."""
+    full = (p.get("full_name") or "").strip()
+    fn = first_name(full)
+    values = {"name": fn, "first_name": fn, "full_name": full,
+              "company": (p.get("company") or "").strip(),
+              "title": (p.get("title") or "").strip()}
+    needed = set(SLOT_RE.findall(template))
+    unknown = needed - KNOWN_SLOTS
+    if unknown:
+        return None, f"template uses unknown slot(s) {sorted(unknown)}; known: {sorted(KNOWN_SLOTS)}"
+    for slot in needed:
+        if not values[slot]:
+            return None, f"no {slot} for this person, template needs it"
+    msg = SLOT_RE.sub(lambda m: values[m.group(1)], template).strip()
+    if len(msg) > MAX_DM_CHARS:
+        return None, f"rendered message is {len(msg)} chars (max {MAX_DM_CHARS})"
+    return msg, None
+
+
+def render(run: Path, template_file: Path) -> int:
+    """OPERATOR-FIXED DM (user directive 2026-09-02): one exact text for
+    everyone, only the name varying. The deliberate opposite of the per-person
+    composition above, chosen by the operator for the li-search handoff. The
+    rendered records carry `templated: True` so the queue's near-duplicate
+    breaker, which exists to catch a WRITER drifting into a template, does not
+    fire on a template the operator chose on purpose. Nothing else changes:
+    same invite ramp, same consent gate, same DM budget."""
+    src = run / "people-qualified.json"
+    if not src.exists():
+        sys.exit("ABORT: people-qualified.json missing")
+    if not template_file.exists():
+        sys.exit(f"ABORT: DM template {template_file} missing")
+    template = template_file.read_text(encoding="utf-8").strip()
+    if not template:
+        sys.exit(f"ABORT: DM template {template_file} is empty")
+    if "<<" in template:
+        sys.exit(f"ABORT: {template_file} still holds the << placeholder >>, not the operator's DM")
+    if not SLOT_RE.search(template):
+        print("  WARN: template has no {name} slot — every person gets byte-identical text")
+    people = json.loads(src.read_text())
+    merged, missing = [], []
+    for p in people:
+        msg, why = render_one(template, p)
+        if msg:
+            merged.append({**p, "message": msg, "templated": True, "hook_used": "operator-template"})
+        else:
+            missing.append(f"{p.get('full_name') or p.get('profile_url') or '?'} ({why})")
+    (run / "people-with-notes.json").write_text(json.dumps(merged, ensure_ascii=False, indent=2))
+    (run / "people-unrendered.json").write_text(json.dumps(missing, ensure_ascii=False, indent=2))
+    print(f"Stage 8.6 render: {len(merged)} messages from the operator's template "
+          f"({template_file.name}), {len(missing)} people could not be rendered")
+    if missing:
+        print("  not rendered: " + "; ".join(missing[:6]) + (f" (+{len(missing) - 6} more)" if len(missing) > 6 else ""))
+    return len(merged)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--phase", required=True, choices=["prep", "batch", "merge"])
+    ap.add_argument("--phase", required=True, choices=["prep", "batch", "merge", "render"])
+    ap.add_argument("--template", help="render: the operator's DM text with {name} slots")
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--work-dir", default=None,
                     help="where the per-agent li-batch-NNN.txt files and li-out/ live "
@@ -188,6 +262,12 @@ def main() -> None:
             pitch = json.loads(pf.read_text())
         except Exception:
             pass
+    if a.phase == "render":
+        if not a.template:
+            sys.exit("ABORT: --phase render needs --template <file>")
+        if render(run, Path(a.template)) == 0:
+            sys.exit(7)
+        return
     n = {"prep": lambda: prep(run),
          "batch": lambda: batch(run, pitch, work),
          "merge": lambda: merge(run, work)}[a.phase]()

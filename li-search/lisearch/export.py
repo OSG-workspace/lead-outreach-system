@@ -19,7 +19,7 @@ RUNS = ROOT / "runs"
 RESULTS = ROOT / "results"
 
 FIELDS = ["n", "batch", "delivered_at", "audience", "linkedin_account", "linkedin_url",
-          "full_name", "title", "company", "location", "match", "score", "sources", "status"]
+          "full_name", "title", "company", "location", "strength", "match", "score", "sources", "status"]
 
 
 def latest_run(slug: str) -> Path:
@@ -43,11 +43,11 @@ def pool(audiences: List[str]) -> List[Dict[str, Any]]:
             m = l.get("match") or ""
             l = dict(l, audience=slug, _seeded=m.startswith("person=") or "company:" in m, _order=i)
             out.append(l)
-    out.sort(key=lambda l: (not l["_seeded"], l["_order"], -(l.get("score") or 0)))
+    out.sort(key=lambda l: (not l["_seeded"], l.get("strength") != "strong", l["_order"], -(l.get("score") or 0)))
     return out
 
 
-def export(name: str, audiences: List[str], take: int) -> Dict[str, Any]:
+def export(name: str, audiences: List[str], take: int, min_strength: str = "") -> Dict[str, Any]:
     d = RESULTS / name
     d.mkdir(parents=True, exist_ok=True)
     master = d / "owners.csv"
@@ -57,7 +57,8 @@ def export(name: str, audiences: List[str], take: int) -> Dict[str, Any]:
             have[row["linkedin_account"]] = row
     batch = 1 + max([int(r["batch"]) for r in have.values()] or [0])
     start = 1 + max([int(r["n"]) for r in have.values()] or [0])
-    fresh = [l for l in pool(audiences) if l["linkedin_account"] not in have][:take]
+    fresh = [l for l in pool(audiences) if l["linkedin_account"] not in have
+             and (not min_strength or l.get("strength") == min_strength)][:take]
     now = time.strftime("%Y-%m-%d")
     rows: List[Dict[str, Any]] = []
     for k, l in enumerate(fresh):
@@ -68,6 +69,7 @@ def export(name: str, audiences: List[str], take: int) -> Dict[str, Any]:
             "company": l.get("company") or "", "location": l.get("location") or "",
             "match": l.get("match") or "", "score": l.get("score") or 0,
             "sources": "+".join(l.get("sources") or []),
+            "strength": l.get("strength") or "",
             "status": "",      # set to 'withdrawn' by hand if a row is later found off-spec
         })
     if rows:

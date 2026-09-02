@@ -1,0 +1,74 @@
+{
+  "channels": [
+    "email",
+    "whatsapp",
+    "whatsapp-fallback"
+  ],
+  "draft_mode": "template",
+  "vertical": null,
+  "countries": [
+    "LB"
+  ],
+  "enrich_cap": null,
+  "target_roles": [
+    "Owner",
+    "Chairman",
+    "CEO",
+    "Co-owner",
+    "General Manager",
+    "Purchasing Director",
+    "Operations Director"
+  ],
+  "fetch_pages": [],
+  "linkedin": null,
+  "li_max_per_company": null,
+  "li_max_people": null,
+  "sourcing": {
+    "max_per_run": 350,
+    "sources": [
+      {
+        "type": "gmaps",
+        "depth": 10,
+        "concurrency": 4,
+        "require_category_match": true,
+        "targets": [
+          {
+            "vertical": "supermarket-lb"
+          }
+        ]
+      },
+      {
+        "type": "overture",
+        "targets": [
+          {
+            "vertical": "supermarket"
+          }
+        ]
+      },
+      {
+        "type": "map",
+        "targets": [
+          {
+            "selector": "\"shop\"~\"supermarket|convenience\"",
+            "vertical": "supermarket"
+          }
+        ]
+      },
+      {
+        "type": "places",
+        "max_requests": 150,
+        "targets": [
+          {
+            "included_type": "supermarket",
+            "vertical": "supermarket-lb"
+          },
+          {
+            "included_type": "convenience_store",
+            "vertical": "supermarket-lb"
+          }
+        ]
+      }
+    ]
+  },
+  "notes": []
+}
