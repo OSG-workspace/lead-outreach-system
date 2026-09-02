@@ -15,6 +15,10 @@ qualify gate), **edit the fixture in this folder** — not a past run under `run
 | `us-clinics/` | US med spas / dental / clinics | custom | email |
 | `us-property/` | US property management | custom | email |
 | `gcc-auto/` | GCC consumer chains | template | email |
+| `gcc-receptionist/` | GCC AI receptionist — Riyadh-first owner-operated clinics, salons, brokerages, home services, restaurants, car service | template | email |
+| `gcc-outreach/` | GCC outreach-system — Dubai/Sharjah real-estate brokerages first, then education + insurance | template | email |
+| `gcc-outreach-li/` | Same GCC outreach ICP, LinkedIn arm — queues invites + custom DMs, sends nothing during the fire (`linkedin.json`, `li_max_per_company.txt`) | template (DMs are per-person) | linkedin |
+| `li-handoff/` | **Not a fire fixture.** `<brief>.pitch.json` angles read by li-writer when `./linkedin-run handoff <brief>` queues li-search's delivered people | — | linkedin |
 | `eu-hotels/` | Big hotels, 31-country EU+ footprint (AI receptionist) | template | email |
 | `lb-enterprise/` | Biggest Lebanese companies | custom | whatsapp |
 | `lb-receptionist/` | Lebanon phone-heavy SMBs | template | email+whatsapp |
@@ -54,8 +58,12 @@ templates/<base>/
                              name-finder dispatch as a `TargetRoles:` line
   places.txt                 map method, optional: City|ISO2|lat|lon|half_width
                              (absent → built-in 195-city EU table)
-  enrich_cap.txt             optional top-N override for Stage 5.3
+  enrich_cap.txt             optional top-N override for Stage 5.3 (default 400)
+  linkedin.json              LinkedIn runs only: per-company walk settings
 ```
+
+Only these files are fixture files. Research notes (`brief.md`, `targeting.md`)
+are not read by any stage and do not belong in a fixture.
 
 The routing phrase → fixture map lives in `../CLAUDE.md` (plus a generic rule:
 naming any existing fixture base fires it — no table edit needed). The whole
@@ -74,27 +82,15 @@ Firing a half-finished fixture always aborts loudly naming the missing file —
 the chain treats every campaign identically, whatever its channels, draft mode,
 or geography.
 
-## Query rotation (keeping lead volume up)
+## Keeping lead volume up
 
-Every fire drops previously-contacted domains (forever) and recently-sourced
-domains (90-day window, `SOURCED_SKIP_DAYS`). DuckDuckGo returns roughly the
-same top results for the same query, so re-firing a query an earlier run
-already fired searches ground where every domain is already blocked.
-
-The pipeline handles this by SCOPING, not by asking: each run claims only the
-queries this campaign has never fired (ledger:
-`vault/lead-outreach/queries-fired-log.txt`) and searches exactly those. You
-never need to think about it — until the pool is spent, at which point the fire
-ABORTS (exit 6) with `query pool exhausted`. That is the signal to **extend the
-fixture's queries**: new companies/cities/regions, new sub-vertical phrasings,
-different qualifiers. Append them; never edit existing lines, since a changed
-line reads as a brand-new query.
-
-Entity-enumeration fixtures (e.g. `lb-insurance-tpa`, one query per named
-company) enumerate a FINITE universe, so they exhaust after roughly one full
-fire. Broad-phrasing fixtures (`au-trades`, `eu-hotels`) last much longer.
-Evidence this works: the 2026-06-24 eu-hotels retries overlapped 42-46% on the
-same queries, and dropped to 5% overlap once queries were diversified.
+Every fire drops previously-contacted domains (forever), sourced-but-never-
+contacted domains (forever by default; `SOURCED_SKIP_DAYS` re-opens a window)
+and retired domains, and each source walks its own city ledger
+(`vault/lead-outreach/overpass-cities-fired.txt`, keyed per source and
+vertical). So consecutive fires open fresh ground on their own, and a fire that
+reports `0 candidates` is a supply signal: add `places.txt` rows, widen the
+selector, or add a source — there is no query pool or query ledger to rotate.
 
 ## Choosing the sourcing method in sourcing.json
 
@@ -103,10 +99,17 @@ The agent-per-query `"search"` method was retired 2026-08-05 along with its
 `source-agent-*` definitions; a poorly-mapped vertical now reaches for a
 `places` source (below) rather than a fan-out of WebSearch agents.
 
-- **`"overture"`** — bulk open POI enumeration via `source_overture.py`, the
-  default first source since 2026-08-12. Free, keyless, no request ceiling, and
-  roughly half its rows already carry the business's own domain. See
-  "Overture sources" below.
+- **`"gmaps"`** — the primary source: `source_gmaps.py` drives the
+  `gosom/google-maps-scraper` binary (`tools/google-maps-scraper`, installed by
+  `tools/install.sh`) and returns the business's own website AND its Maps
+  category in one pass (measured 2026-08-18: 19/20 rows with a website versus
+  the Places API's name-only rows). Config: `{"type":"gmaps","targets":[{"vertical":
+  "trades","terms":["plumber","electrician"]}]}` over the fixture's `places.txt`
+  cities; a target with no `terms` takes them from the shared
+  `tools/scripts/gmaps_presets.json`. City ledger key: `gmaps:<vertical>`.
+- **`"overture"`** — bulk open POI enumeration via `source_overture.py`. Free,
+  keyless, no request ceiling, and roughly half its rows already carry the
+  business's own domain. See "Overture sources" below.
 - **`"map"`** — deterministic OSM enumeration via `source_overpass.py`:
   exhaustive per city, region by region, zero LLM tokens, a per-vertical
   fired-city ledger (`vault/lead-outreach/overpass-cities-fired.txt`) so
@@ -135,9 +138,13 @@ needs more declares them explicitly, and they run in order:
  ]}
 ```
 
+Sources run concurrently (`SOURCE_WORKERS`, default 4); order in the list is
+only the merge priority.
+
 | type | index it reads | use it when |
 |---|---|---|
-| `overture` | Overture Maps bulk POI (parquet on S3) | **the default first source for any premises-or-profile ICP.** Free, no request ceiling, no key, and ~half the rows already carry the business's own domain. |
+| `gmaps` | Google Maps via the gosom scraper binary | **the primary source**: website + category per row, free, no key; anything with a Business Profile. |
+| `overture` | Overture Maps bulk POI (parquet on S3) | bulk premises-or-profile ICPs. Free, no request ceiling, no key, ~half the rows carry the business's own domain. |
 | `map` | OpenStreetMap via Overpass | the ICP is **premises-bound** and well mapped (hotels, clinics, law offices). Free, exhaustive per city, 0 tokens. |
 | `places` | Google Places API (New) | the ICP has **no premises** or OSM is thin — mobile trades, home services, anything that lives on a Google Business Profile. |
 | `directory` | any paginated web listing | the authoritative list is a register or association roster (licensing boards, member directories). |

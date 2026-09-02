@@ -48,7 +48,7 @@ Sourcing is **free by design** — no paid enrichment API, no scraping credits:
 
 | Job | Tool | Cost |
 |---|---|---|
-| Find businesses | OpenStreetMap / Overpass enumeration | free |
+| Find businesses | Google Maps (`gosom/google-maps-scraper`), Overture Maps, OpenStreetMap / Overpass | free |
 | Fetch their sites | `crawl4ai` (JS-rendered, multi-page) | free |
 | Web lookups | agent WebSearch / WebFetch | free |
 | Send | Brevo | free tier: 300/day |
@@ -116,11 +116,13 @@ is the design's main defence against generic outreach.
 ## Layout
 
 ```
-.claude/agents/           the 6 sub-agents the orchestrator dispatches
+.claude/agents/           the 6 sub-agents the orchestrator dispatches headlessly
+.fire-work/<slug>/        per-agent batch/out files during a fire (gitignored,
+                          removed at run end; kept outside project/ so no
+                          CLAUDE.md is attached to sub-agents as memory)
 project/
   CLAUDE.md               operating doc: routing, contracts, approval modes
-  ARCHITECTURE.md         file + agent map, stage table, gates
-  PIPELINE.md             per-stage rationale
+  ARCHITECTURE.md         file + agent map, stage table, rationale, gates
   templates/<name>/       one fire-ready fixture per campaign
   tools/scripts/          the deterministic stages (run_fire.py et al)
   linkedin/               the LinkedIn channel (Node + playwright-core)
@@ -166,8 +168,8 @@ Use it on audiences you can defend contacting.
 ## Development
 
 ```bash
-cd project && python3 -m pytest tests/ -q      # 77 tests, no network required
-python3 tools/scripts/name_from_email.py       # self-test for the name parser
+cd project && tools/venv/bin/python3 -m pytest   # pytest.ini points at tests/; no network required
+tools/venv/bin/python3 tools/scripts/name_from_email.py  # self-test for the name parser
 ```
 
 ## License

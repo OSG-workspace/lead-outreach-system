@@ -122,19 +122,9 @@ playwright install chromium > /dev/null 2>&1 || {
 deactivate
 echo "   ✓ Python scrapers installed"
 
-# ── Step 3: run.sh wrapper ──────────────────────────────────────────
-cat > tools/run.sh << 'EOF'
-#!/bin/bash
-# Run a Python tool inside the project venv
-set -e
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck disable=SC1091
-source "$PROJECT_ROOT/tools/venv/bin/activate"
-python3 "$@"
-EOF
-chmod +x tools/run.sh
-
-# ── Step 4: install test scripts (already in tools/scripts/) ────────
+# ── Step 3: make the stage shell scripts executable ─────────────────
+# (no venv wrapper is generated: run_fire.py resolves tools/venv/bin/python3
+#  itself, and fire_campaign.sh is the one entry point)
 chmod +x tools/scripts/*.sh 2>/dev/null || true
 
 # ── Done ────────────────────────────────────────────────────────────
@@ -146,15 +136,11 @@ echo ""
 echo "Next steps:"
 echo ""
 echo "  1. Copy .env.example to .env and fill in:"
-echo "       BREVO_MCP_TOKEN, BREVO_SENDER_EMAIL, OBSIDIAN_VAULT_PATH"
+echo "       BREVO_MCP_TOKEN, BREVO_SENDER_EMAIL, BREVO_SENDER_ADDRESS"
+echo "       (OBSIDIAN_VAULT_PATH is optional)"
 echo ""
-echo "  2. Verify everything works:"
-echo "       ./tools/scripts/test-maps.sh"
-echo "       ./tools/run.sh tools/scripts/test-ddg.py"
-echo "       ./tools/run.sh tools/scripts/test-crawl4ai.py"
-echo ""
-echo "  3. Open in Claude Code:"
-echo "       claude"
-echo "       /vault-bootstrap"
-echo "       /find-leads \"your target description, pitch on the gap\""
+echo "  2. Trace a campaign without spending anything:"
+echo "       bash tools/scripts/fire_campaign.sh <base> --plan"
+echo "     then draft only:  ... <base> --dry-run   and live:  ... <base>"
+echo "     (<base> is any folder under templates/; the vault bootstraps on first run)"
 echo ""

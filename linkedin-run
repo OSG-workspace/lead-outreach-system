@@ -9,6 +9,7 @@
 # once instead of being retyped.
 #
 #   ./linkedin-run fire [campaign] [extra run_fire args]   queue weeks of invites
+#   ./linkedin-run handoff <brief> [--take N] [--plan]     queue li-search's people (custom DMs)
 #   ./linkedin-run plan [campaign]                         trace stages, consume nothing
 #   ./linkedin-run send                                    invites + sweep + DMs (LIVE)
 #   ./linkedin-run dry                                     same, sends nothing
@@ -59,6 +60,14 @@ case "$cmd" in
     cd "$PROJECT"
     echo "Firing $campaign (LinkedIn: this QUEUES invites, it does not send)…"
     exec bash tools/scripts/fire_campaign.sh "$campaign" "$@"
+    ;;
+  handoff)
+    brief="${1:-}"; shift || true
+    [ -n "$brief" ] || die "usage: ./linkedin-run handoff <brief> [--take N] [--plan] [--audience <slug>]"
+    activate_venv                       # li_handoff.py runs the Python stages on sys.executable
+    cd "$PROJECT"
+    echo "Handing li-search brief '$brief' to the LinkedIn channel (this QUEUES invites, it does not send)…"
+    exec python3 tools/scripts/li_handoff.py --brief "$brief" "$@"
     ;;
   plan)
     campaign="${1:-$CAMPAIGN_DEFAULT}"; shift || true

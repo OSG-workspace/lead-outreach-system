@@ -22,9 +22,12 @@ project/vault/*
 **/bounce-list.md
 **/lead-outreach/leads/
 
-# ===== Run artifacts — large (27GB scraped HTML) + PII =====
+# ===== Run artifacts — scraped HTML + PII =====
 runs/
 **/raw_html/
+# per-agent batch/out files for a live fire (kept outside project/ so no
+# CLAUDE.md is attached to sub-agents as memory; removed at run end)
+.fire-work/
 
 # ===== Retired/quarantined data (old vault copies containing PII) =====
 **/.archive/
@@ -46,7 +49,8 @@ node_modules/
 # ===== Git backups created during the org push =====
 **/.git.bak/
 
-# ===== Large regenerable binary (gosom maps scraper; installed by setup-tools, deprecated Maps path) =====
+# ===== Large regenerable binary (gosom maps scraper; installed by project/tools/install.sh,
+#       the primary Stage-2 source driven by tools/scripts/source_gmaps.py) =====
 **/google-maps-scraper
 *.bin
 
@@ -56,5 +60,6 @@ files.zip
 
 # audit 2026-07: prevent recurrence of stray agent outputs + ledger PII
 /*_result.json
+/output.json
 project/enrich-out-*.json
 project/vault/lead-outreach/sourced-log.txt
