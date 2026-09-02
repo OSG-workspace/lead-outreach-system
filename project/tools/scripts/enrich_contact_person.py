@@ -29,6 +29,7 @@ import re as _re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -50,6 +51,15 @@ except Exception:  # missing dnspython or network unavailable — rescue is best
 p = argparse.ArgumentParser()
 p.add_argument("--phase", required=True, choices=["prep", "merge", "rescue"])
 p.add_argument("--run-dir", required=True)
+p.add_argument("--work-dir", default=None,
+               help="where the per-agent intermediates live (enrich-batch-NNN.txt, "
+                    "enrich-out-NNN.json, and the OutputFile: path written inside each "
+                    "batch). Default: the run dir, unchanged behaviour. run_fire passes "
+                    "a dir OUTSIDE project/ because a batch file under runs/ makes "
+                    "Claude Code attach project/CLAUDE.md (~7.5k tokens) to every "
+                    "name-finder agent — 664/665 transcripts on 2026-09-02. Everything "
+                    "run-level (leads-*.json, derived-contacts.json, enrich-summary.json, "
+                    "leads-dropped.json, raw_html) stays in --run-dir.")
 p.add_argument("--enrich-phone", action="store_true",
                help="resolve a mobile/WhatsApp number per lead (name-finder step 3). "
                     "OFF by default — only WhatsApp runs need it; an email-only run "
@@ -74,6 +84,10 @@ p.add_argument("--linkedin-results",
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
+# The per-agent intermediates (enrich-batch-*.txt / enrich-out-*.json). Same as
+# ROOT unless --work-dir is given; created on demand so run_fire can hand over a
+# path that does not exist yet. Only prep writes here and only merge globs here.
+WORK = Path(args.work_dir).resolve() if args.work_dir else ROOT
 # Read the qualified+capped set when Stage 5.3 produced one, so we only enrich
 # the top-N fit leads instead of every extracted lead. Falls back to the raw
 # extract for older runs that predate the qualify gate.
@@ -339,14 +353,16 @@ def phase_prep() -> None:
     dispatches one name-finder Haiku per batch in a single message."""
     leads = load_leads()
     # Clear any stale prep files from a prior /fire on this folder.
-    for f in ROOT.glob("enrich-batch-*.txt"):
+    WORK.mkdir(parents=True, exist_ok=True)
+    for f in WORK.glob("enrich-batch-*.txt"):
         f.unlink()
-    for f in ROOT.glob("enrich-out-*.json"):
+    for f in WORK.glob("enrich-out-*.json"):
         f.unlink()
 
     for f in ROOT.glob("derived-contacts.json"):
         f.unlink()
 
+    # raw_html is a RUN artifact (Stage 4 writes it there) — never the work dir.
     raw_dir = ROOT / "raw_html"
     # Every batch file is built from raw_html (harvested addresses + about/team/
     # contact text). Without it the agents start blind: on
@@ -452,8 +468,8 @@ def phase_prep() -> None:
 
         n_batches += 1
         nnn = f"{n_batches:03d}"
-        batch_path = ROOT / f"enrich-batch-{nnn}.txt"
-        out_path = ROOT / f"enrich-out-{nnn}.json"
+        batch_path = WORK / f"enrich-batch-{nnn}.txt"
+        out_path = WORK / f"enrich-out-{nnn}.json"
         target_roles_line = f"TargetRoles: {TARGET_ROLES}\n" if TARGET_ROLES else ""
         batch_path.write_text(
             f"LeadId: {lead['lead_id']}\n"
@@ -474,7 +490,8 @@ def phase_prep() -> None:
         )
     if derived:
         DERIVED.write_text(json.dumps(derived, ensure_ascii=False, indent=2) + "\n")
-    print(f"Prepped {n_batches} enrich batches in {ROOT}")
+    print(f"Prepped {n_batches} enrich batches in {WORK}"
+          + (f" (work dir; run dir {ROOT})" if WORK != ROOT else ""))
     if TARGET_ROLES:
         print(f"  TargetRoles override active: {TARGET_ROLES}")
     if derive_on:
@@ -626,8 +643,8 @@ def phase_merge() -> None:
     # 2026-06-25-eu-hotels prepped 94 batches, only 24 agents ever wrote an
     # output, and the run shipped 15 sends as if nothing was wrong. A partial
     # fan-out is a degraded run: halt instead of silently sending a fraction.
-    n_batches = len(list(ROOT.glob("enrich-batch-*.txt")))
-    n_outs = len(list(ROOT.glob("enrich-out-*.json")))
+    n_batches = len(list(WORK.glob("enrich-batch-*.txt")))
+    n_outs = len(list(WORK.glob("enrich-out-*.json")))
     min_completion = float(os.environ.get("ENRICH_MIN_COMPLETION", "0.6"))
     if n_batches and n_outs / n_batches < min_completion:
         print(f"ABORT: enrichment fan-out incomplete — {n_outs}/{n_batches} agent outputs "
@@ -650,7 +667,7 @@ def phase_merge() -> None:
         except Exception:
             print("  WARN: derived-contacts.json unreadable; falling back to agents only.")
 
-    out_files = sorted(ROOT.glob("enrich-out-*.json"))
+    out_files = sorted(WORK.glob("enrich-out-*.json"))
     parse_errors = 0
     for f in out_files:
         try:
@@ -739,36 +756,80 @@ def phase_merge() -> None:
         if dom:
             unreachable.append((dom, RETIRING_STAGES[stage]))
 
+    # --- SMTP rescue, pass 1: decide WHO gets probed and run the probes -------
+    # SMTP RESCUE (2026-08-20, always on — free, no channel flag, no browser,
+    # no third-party API). name-finder usually finds the right person and
+    # fails only on the email (see name-finder.md's found:false-with-name
+    # addition); before giving up, probe the LEAD'S OWN domain by SMTP RCPT for
+    # the common pattern candidates. See smtp_email_probe.py for exactly how
+    # and its measured, honest limitations (catch-all domains report
+    # `catch_all`, never a false `verified`). A verified hit still runs through
+    # the SAME is_direct_email()/looks_like_business_name gates below as any
+    # other candidate — an SMTP accept that only coincidentally matches a role
+    # mailbox (e.g. "gm@" by initials) is still caught and rejected downstream.
+    #
+    # WHY THE PROBES RUN AHEAD OF THE LOOP, IN PARALLEL (2026-09-02). Measured
+    # on 2026-09-02-gcc-receptionist: 71 probes ran one after another inside
+    # the per-lead loop, 14.7 minutes, ~12.4 s each, for 5 verified. Every
+    # probe talks to a DIFFERENT mail server (the lead's own MX), so running
+    # them concurrently keeps the module's one-session-per-domain politeness
+    # intact — no server sees more than it did before, they just overlap. The
+    # decision of who gets probed, and every gate applied to the answer, is
+    # byte-identical to the serial version; only the scheduling moved.
+    # SMTP_WORKERS sizes the pool (default 16). SMTP_PROBE=0 (set by run_fire's
+    # preflight when port25_reachable() is False) skips the probes entirely
+    # instead of paying N x timeout to learn nothing.
+    smtp_enabled = os.environ.get("SMTP_PROBE", "1") not in ("0", "false", "no")
+    smtp_workers = max(1, int(os.environ.get("SMTP_WORKERS", "16")))
+    rescue_plan: dict[str, tuple[str, str, str, str]] = {}   # lead_id -> (first, last, basis, domain)
+    for lead in leads:
+        result = enriched.get(lead["lead_id"])
+        if result and result.get("found"):
+            continue
+        r = result or {}
+        first_try = (r.get("first_name") or "").strip()
+        last_try = (r.get("last_name") or "").strip()
+        name_basis = "structured"
+        if not (first_try or last_try):
+            # The agent named the person in prose but left the structured
+            # fields empty — 55 of 80 drops on 2026-08-20-eu-hotels. Mine
+            # the name it already wrote rather than discard the lead.
+            first_try, last_try = recover_name_from_reason(r.get("reason", ""))
+            name_basis = "prose-recovered"
+        domain_try = _lead_domain(lead)
+        if (first_try or last_try) and domain_try and smtp_probe is not None:
+            rescue_plan[lead["lead_id"]] = (first_try, last_try, name_basis, domain_try)
+
+    probes: dict[str, dict] = {}
+    if rescue_plan and smtp_enabled:
+        import concurrent.futures
+        t0 = time.monotonic()
+        print(f"  SMTP rescue: probing {len(rescue_plan)} name-found-no-email lead(s) "
+              f"on {min(smtp_workers, len(rescue_plan))} worker(s)…", flush=True)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=smtp_workers) as pool:
+            futs = {pool.submit(smtp_probe.probe_person, f_, l_, d_, SMTP_MAIL_FROM): lid
+                    for lid, (f_, l_, _b, d_) in rescue_plan.items()}
+            for fut in concurrent.futures.as_completed(futs):
+                probes[futs[fut]] = fut.result()
+        print(f"  SMTP rescue: {len(probes)} probe(s) done in "
+              f"{time.monotonic() - t0:.0f}s", flush=True)
+    elif rescue_plan:
+        print(f"  SMTP rescue: SKIPPED for {len(rescue_plan)} lead(s) — SMTP_PROBE=0 "
+              f"(port 25 unreachable from this network per preflight)")
+
+    # --- pass 2: the per-lead gates, using the collected probe results --------
     for lead in leads:
         result = enriched.get(lead["lead_id"])
         if not result or not result.get("found"):
-            # SMTP RESCUE (2026-08-20, always on — free, no channel flag, no
-            # browser, no third-party API). name-finder usually finds the
-            # right person and fails only on the email (see name-finder.md's
-            # found:false-with-name addition); before giving up, probe the
-            # LEAD'S OWN domain by SMTP RCPT for the common pattern
-            # candidates. See smtp_email_probe.py for exactly how and its
-            # measured, honest limitations (catch-all domains report
-            # `catch_all`, never a false `verified`). A verified hit still
-            # runs through the SAME is_direct_email()/looks_like_business_name
-            # gates below as any other candidate — an SMTP accept that only
-            # coincidentally matches a role mailbox (e.g. "gm@" by initials)
-            # is still caught and rejected downstream, same as always.
             r = result or {}
-            first_try = (r.get("first_name") or "").strip()
-            last_try = (r.get("last_name") or "").strip()
-            name_basis = "structured"
-            if not (first_try or last_try):
-                # The agent named the person in prose but left the structured
-                # fields empty — 55 of 80 drops on 2026-08-20-eu-hotels. Mine
-                # the name it already wrote rather than discard the lead.
-                first_try, last_try = recover_name_from_reason(r.get("reason", ""))
-                name_basis = "prose-recovered"
-            domain_try = _lead_domain(lead)
             rescued = False
-            if (first_try or last_try) and domain_try and smtp_probe is not None:
+            plan = rescue_plan.get(lead["lead_id"])
+            if plan is not None and not smtp_enabled:
+                result = {**r, "smtp_probe_note": "skipped: port 25 unreachable"}
+            elif plan is not None:
+                first_try, last_try, name_basis, domain_try = plan
                 smtp_probed += 1
-                probe = smtp_probe.probe_person(first_try, last_try, domain_try, SMTP_MAIL_FROM)
+                probe = probes[lead["lead_id"]]
                 if probe["status"] == "verified":
                     result = {**r, "found": True,
                               "first_name": first_try, "last_name": last_try,

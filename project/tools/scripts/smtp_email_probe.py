@@ -60,9 +60,11 @@ is_direct_email(), domain_accepts_mail(), and the sent-log/suppression
 ledgers exactly like any other resolved contact.
 
 LIBRARY USE (the path the orchestrator uses)
-    from smtp_email_probe import probe_person
+    from smtp_email_probe import probe_person, port25_reachable
+    port25_reachable()          # False -> this network filters outbound 25; skip
     result = probe_person("Anna", "Muster", "example.com",
-                           mail_from="you@yourdomain.com", timeout=10)
+                           mail_from="you@yourdomain.com", timeout=10,
+                           connect_timeout=3)   # handshake 3s, each command 10s
     # {"email": "...", "status": "verified|catch_all|unverified|not_found|guess|no_candidates",
     #  "confidence": "high|medium|low|none", "method": "smtp|pattern", "note": "..."}
 
@@ -73,11 +75,14 @@ Input CSV needs columns (case-insensitive): first_name, last_name, domain.
 from __future__ import annotations
 import argparse
 import csv
+import functools
+import os
 import random
 import smtplib
 import socket
 import string
 import sys
+import threading
 import time
 import unicodedata
 from collections import OrderedDict
@@ -139,12 +144,17 @@ def candidate_emails(first: str, last: str, domain: str) -> tuple[str, list[str]
 
 
 _mx_cache: dict[str, list[str]] = {}
+# phase_merge in enrich_contact_person.py now runs probe_person from a thread
+# pool (one probe per lead, each against a DIFFERENT mail server). The cache is
+# the only state shared between those threads, so guard it.
+_mx_lock = threading.Lock()
 
 
 def get_mx_hosts(domain: str) -> list[str]:
     """Mail exchanger hostnames for a domain, lowest-preference first. [] if none."""
-    if domain in _mx_cache:
-        return _mx_cache[domain]
+    with _mx_lock:
+        if domain in _mx_cache:
+            return _mx_cache[domain]
     hosts: list[str] = []
     try:
         answers = dns.resolver.resolve(domain, "MX")
@@ -152,18 +162,115 @@ def get_mx_hosts(domain: str) -> list[str]:
         hosts = [h for _, h in ranked if h]
     except Exception:
         hosts = []
-    _mx_cache[domain] = hosts
+    with _mx_lock:
+        _mx_cache[domain] = hosts
     return hosts
 
 
-def _probe_domain(mx_host: str, mail_from: str, rcpts: list[str], timeout: float
-                   ) -> dict[str, int | None]:
+# --- Two timeouts, not one (2026-09-02) -------------------------------------
+# MEASURED on 2026-09-02-gcc-receptionist: 71 probes, 14.7 minutes, ~12.4 s
+# each. 24 of the 71 were doomed before the first byte (18 "SMTP unreachable",
+# 6 "no MX") and every one of them paid the full 10 s, because
+# smtplib.SMTP(timeout=10) applies that single value to the TCP connect AND to
+# every read. A host that never answers SYN is a fact you learn in ~3 s; a live
+# server that takes 8 s to answer RCPT is a slow server you still want to hear
+# from. So: SMTP_CONNECT_TIMEOUT (default 3 s) for the handshake,
+# `timeout` (still 10 s) for the banner and every command after it.
+DEFAULT_CONNECT_TIMEOUT = float(os.environ.get("SMTP_CONNECT_TIMEOUT", "3.0"))
+# socket.create_connection() walks EVERY resolved address with the full timeout
+# each — mx1.hotmail.com resolves to ~15 A records, so a filtered port 25 there
+# costs 15 x timeout (measured: 45 s with timeout=3). Try at most this many.
+_MAX_CONNECT_ADDRS = 2
+
+
+def _connect(host: str, port: int, timeout: float,
+             max_addrs: int = _MAX_CONNECT_ADDRS) -> socket.socket:
+    """TCP connect with a bounded worst case: `timeout` per address, at most
+    `max_addrs` addresses. Raises OSError (incl. socket.timeout) on failure."""
+    infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError(f"getaddrinfo returned no addresses for {host}")
+    err: Exception | None = None
+    for family, socktype, proto, _canon, sockaddr in infos[:max_addrs]:
+        sock = None
+        try:
+            sock = socket.socket(family, socktype, proto)
+            sock.settimeout(timeout)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as e:
+            err = e
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+    raise err if err is not None else OSError(f"could not connect to {host}:{port}")
+
+
+@functools.lru_cache(maxsize=1)
+def _local_hostname() -> str:
+    """smtplib.SMTP() computes this via socket.getfqdn() on EVERY instance (a
+    reverse-DNS lookup that can take seconds on some networks). One lookup per
+    process is enough; smtplib falls back to an address literal if it is empty."""
+    try:
+        fqdn = socket.getfqdn()
+        return fqdn if "." in fqdn else ""
+    except Exception:
+        return ""
+
+
+class _SMTP(smtplib.SMTP):
+    """smtplib.SMTP with a separate, shorter TCP connect timeout.
+
+    `_get_socket` is the hook smtplib itself uses (SMTP_SSL overrides it the
+    same way), so this stays inside supported behaviour: the socket is opened
+    with `connect_timeout`, then switched to the command timeout before smtplib
+    reads the banner or sends anything."""
+
+    def __init__(self, connect_timeout: float, timeout: float):
+        self._connect_timeout = connect_timeout
+        super().__init__(timeout=timeout, local_hostname=_local_hostname() or None)
+
+    def _get_socket(self, host, port, timeout):
+        sock = _connect(host, port, self._connect_timeout)
+        sock.settimeout(timeout)      # banner + every command: the 10 s budget
+        return sock
+
+
+def port25_reachable(timeout: float = 3.0) -> bool:
+    """Can this machine open an outbound TCP connection to port 25 at all?
+
+    Residential ISPs, many VPNs and some cloud hosts filter outbound 25; on such
+    a network EVERY probe would be "SMTP unreachable" after its full timeout.
+    run_fire's preflight calls this once and sets SMTP_PROBE=0 when it is False
+    so phase_merge skips the whole rescue instead of paying N x timeout to learn
+    nothing. Two independent, always-on mail exchangers; True if either connects.
+    (Both measured 2026-09-02: 0.23 s and 0.08 s from this machine.)"""
+    for host in ("gmail-smtp-in.l.google.com",
+                 "hotmail-com.olc.protection.outlook.com"):
+        try:
+            sock = _connect(host, 25, timeout)
+        except OSError:
+            continue
+        try:
+            sock.close()
+        except OSError:
+            pass
+        return True
+    return False
+
+
+def _probe_domain(mx_host: str, mail_from: str, rcpts: list[str], timeout: float,
+                  connect_timeout: float | None = None) -> dict[str, int | None]:
     """ONE SMTP session, ONE MAIL FROM, RCPT TO every address in `rcpts` in order.
     Returns {address: code_or_None}. A single connection failure fails every
     address in this batch with None (couldn't tell), not a false negative."""
     codes: dict[str, int | None] = {r: None for r in rcpts}
+    if connect_timeout is None:
+        connect_timeout = DEFAULT_CONNECT_TIMEOUT
     try:
-        server = smtplib.SMTP(timeout=timeout)
+        server = _SMTP(connect_timeout=connect_timeout, timeout=timeout)
         server.connect(mx_host, 25)
         server.ehlo_or_helo_if_needed()
         code, _ = server.mail(mail_from)
@@ -192,10 +299,16 @@ def _probe_domain(mx_host: str, mail_from: str, rcpts: list[str], timeout: float
 
 
 def probe_person(first: str, last: str, domain: str, mail_from: str,
-                  timeout: float = 10.0, do_verify: bool = True) -> dict:
+                  timeout: float = 10.0, do_verify: bool = True,
+                  connect_timeout: float | None = None) -> dict:
     """Resolve one person to a best-guess email + status.
     Returns: {email, status, confidence, method, note}
       status: verified | catch_all | unverified | not_found | guess | no_candidates
+    `timeout` bounds every SMTP command; `connect_timeout` (default env
+    SMTP_CONNECT_TIMEOUT, 3 s) bounds only the TCP handshake, so an unreachable
+    host fails fast instead of spending the full command budget.
+    Thread-safe: no shared state beyond the locked MX cache, so callers may run
+    many probes concurrently — each hits a different mail server.
     """
     domain, candidates = candidate_emails(first, last, domain)
     if not candidates:
@@ -216,7 +329,8 @@ def probe_person(first: str, last: str, domain: str, mail_from: str,
     junk_local = "".join(random.choices(string.ascii_lowercase, k=16))
     junk_addr = f"{junk_local}@{domain}"
     # ONE session covers the catch-all probe AND every real candidate.
-    codes = _probe_domain(mx_host, mail_from, [junk_addr] + candidates, timeout)
+    codes = _probe_domain(mx_host, mail_from, [junk_addr] + candidates, timeout,
+                          connect_timeout)
 
     if all(c is None for c in codes.values()):
         return {"email": top_guess, "status": "unverified", "confidence": "low",
@@ -252,7 +366,8 @@ def norm_headers(fieldnames):
 
 
 def run_csv(in_path: str, out_path: str, mail_from: str, delay: float,
-            do_verify: bool, timeout: float) -> None:
+            do_verify: bool, timeout: float,
+            connect_timeout: float | None = None) -> None:
     with open(in_path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         rows = list(reader)
@@ -283,7 +398,8 @@ def run_csv(in_path: str, out_path: str, mail_from: str, delay: float,
                 time.sleep(delay)
             last_domain = domain
 
-            res = probe_person(first, last, domain, mail_from, timeout, do_verify)
+            res = probe_person(first, last, domain, mail_from, timeout, do_verify,
+                               connect_timeout)
             stats[res["status"]] = stats.get(res["status"], 0) + 1
 
             out_row = {h: row.get(h, "") for h in passthrough}
@@ -311,7 +427,10 @@ def main():
                          "(a real, already-deliverable domain this pipeline already sends "
                          "from) — falls back to verify@example.com if unset.")
     ap.add_argument("--delay", type=float, default=1.5)
-    ap.add_argument("--timeout", type=float, default=10.0)
+    ap.add_argument("--timeout", type=float, default=10.0,
+                    help="per-command SMTP timeout (banner, MAIL, RCPT)")
+    ap.add_argument("--connect-timeout", type=float, default=DEFAULT_CONNECT_TIMEOUT,
+                    help="TCP connect timeout only (env SMTP_CONNECT_TIMEOUT, default 3s)")
     ap.add_argument("--no-verify", action="store_true")
     args = ap.parse_args()
 
@@ -321,7 +440,7 @@ def main():
         mail_from = env.get("BREVO_SENDER_EMAIL") or "verify@example.com"
 
     run_csv(args.in_path, args.out_path, mail_from, args.delay,
-            not args.no_verify, args.timeout)
+            not args.no_verify, args.timeout, args.connect_timeout)
 
 
 if __name__ == "__main__":

@@ -37,7 +37,9 @@ PER-BRANCH CONFIG (sourcing.json — every knob optional, all have defaults):
   "resolve_max": 400                 cap on names resolved per run
   "resolve_min_name_tokens": 2       tokens that must match on the page
   "resolve_blocklist": ["extra.com"] additional never-accept hosts
-  "resolve_workers": 8               parallel resolver threads (env RESOLVE_WORKERS wins)
+  "resolve_workers": 12              parallel resolver threads, cap 24 (env RESOLVE_WORKERS wins)
+  "resolve_sleep": 0.6               upper bound of the per-row jitter (lower bound 0.15s)
+  "resolve_max_fetches": 2           verification fetches per name (8s timeout each)
 
 PARALLEL (2026-08-19). This stage was the pipeline's #1 wall-clock cost once the
 fetch stage was fixed: strictly serial, one row at a time — a search, up to 3
@@ -51,6 +53,22 @@ trigger a SHARED exponential backoff (all workers pause together, the row
 retries once) so a throttled backend degrades to slower, never to wrong or
 silently empty. Verification is byte-identical to the serial version — the
 quality bar (fetched page must PROVE identity) is untouched.
+
+THROUGHPUT PASS (2026-09-02). Measured on 2026-09-02-gcc-receptionist: 800
+names -> 24 minutes -> 168 domains (21%) on 8 workers. Per row the cost was a
+0.3-1.2 s jitter, then up to 3 verification fetches, each tried https THEN http
+with a 12 s timeout apiece — a dead host cost 24 s and three of them 72 s.
+Changed: workers 8 -> 12 (cap 16 -> 24), jitter 0.15-0.6 s, fetch timeout 8 s,
+at most 2 fetches per name. Not 16 workers by default, deliberately: the
+remote throttle is per-IP, not per-thread (ddgs keeps no process-level limiter;
+each thread's DDGS session gets its own random browser impersonation), every
+ddgs.text() call already fans out to 2 providers concurrently, and a throttled
+IP stays throttled for a while and also starves li-search on the same machine.
+The shared Pacer backoff (all workers hold together, 10 -> 60 s, one retry on a
+fresh session) still bounds the damage at any worker count, but the release
+after a hold is a synchronized burst that grows with the pool, so 12 is the
+default and 16-24 is one env var away (RESOLVE_WORKERS) once a run shows it is
+safe on this IP. Which domains are accepted is untouched.
 """
 from __future__ import annotations
 import argparse
@@ -100,7 +118,12 @@ def name_tokens(name: str) -> list[str]:
     return [w.lower() for w in _WORD.findall(name) if w.lower() not in _STOP]
 
 
-def fetch(url: str, timeout: int = 12) -> str | None:
+FETCH_TIMEOUT = 8          # was 12; a verification page that has not answered in 8 s is not proving anything
+MAX_FETCHES = 2            # was 3; hosts tried per name (each https then http)
+JITTER_LO, JITTER_HI = 0.15, 0.6   # was 0.3-1.2
+
+
+def fetch(url: str, timeout: int = FETCH_TIMEOUT) -> str | None:
     try:
         req = urllib.request.Request(url, headers={
             "User-Agent": USER_AGENT,
@@ -158,17 +181,25 @@ class Pacer:
         self._lock = threading.Lock()
         self._hold_until = 0.0
         self._penalty = 10.0          # grows 10 -> 20 -> 40 -> 60 (cap)
-        self.base = max(0.4, base_sleep)
+        self.base = max(JITTER_LO + 0.05, base_sleep)
 
     def wait(self) -> None:
+        held = False
         while True:
             with self._lock:
                 hold = self._hold_until
             now = time.monotonic()
             if now >= hold:
                 break
+            held = True
             time.sleep(min(hold - now, 2.0))
-        time.sleep(random.uniform(0.3, self.base))
+        if held:
+            # Every worker wakes from a hold at the same instant; without this
+            # the retry is a synchronized burst of `workers` searches inside
+            # half a second, which is exactly the shape that re-trips a
+            # throttle. Spread the release over a few seconds.
+            time.sleep(random.uniform(0.0, 3.0))
+        time.sleep(random.uniform(JITTER_LO, self.base))
 
     def backoff(self) -> float:
         with self._lock:
@@ -205,7 +236,7 @@ def resolve_one(name: str, city: str, country: str, ddgs, cfg: dict,
         if DIRECTORY.search(host) or blocked.search(host):
             continue
         tried += 1
-        if tried > cfg.get("resolve_max_fetches", 3):
+        if tried > cfg.get("resolve_max_fetches", MAX_FETCHES):
             break
         for scheme in ("https", "http"):
             html = fetch(f"{scheme}://{host}/")
@@ -216,6 +247,17 @@ def resolve_one(name: str, city: str, country: str, ddgs, cfg: dict,
         if verifies(html, tokens, cfg.get("resolve_min_name_tokens", 2), host):
             return host, "verified"
     return None, "unverified" if tried else "directories-only"
+
+
+DEFAULT_WORKERS = 12
+MAX_WORKERS = 24
+
+
+def worker_count(cfg: dict) -> int:
+    """RESOLVE_WORKERS env > sourcing.json resolve_workers > 12; clamped 1..24."""
+    workers = int(os.environ.get("RESOLVE_WORKERS",
+                                 str(cfg.get("resolve_workers", DEFAULT_WORKERS))))
+    return max(1, min(workers, MAX_WORKERS))
 
 
 def main() -> None:
@@ -263,10 +305,8 @@ def main() -> None:
         print(f"resolve: WARNING {dropped} name-only businesses were CAPPED OFF by "
               f"resolve_max={cap} and will not be resolved this run. Raise "
               f'"resolve_max" in sourcing.json to reach them.')
-    workers = int(os.environ.get("RESOLVE_WORKERS",
-                                 str(cfg.get("resolve_workers", 8))))
-    workers = max(1, min(workers, 16))
-    pacer = Pacer(float(cfg.get("resolve_sleep", 1.2)))
+    workers = worker_count(cfg)
+    pacer = Pacer(float(cfg.get("resolve_sleep", JITTER_HI)))
     local = threading.local()
 
     def _worker(row: tuple[str, str, str, str]) -> tuple[tuple[str, str, str, str], str | None, str]:

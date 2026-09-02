@@ -45,7 +45,12 @@ def _norm_company(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
 
 
-def prep(run: Path, cap: int) -> int:
+def prep(run: Path, cap: int, work: Path | None = None) -> int:
+    """`work` is where the per-agent lif-batch-NNN.txt files and the lif-out/
+    dir live (default: the run dir). run_fire passes a dir OUTSIDE project/ so
+    a li-finder reading its batch file does not pull project/CLAUDE.md into
+    context. li-companies.json / people-raw.json are still read from the run."""
+    work = work or run
     companies = json.loads((run / "li-companies.json").read_text())
     people = []
     praw = run / "people-raw.json"
@@ -58,13 +63,14 @@ def prep(run: Path, cap: int) -> int:
     covered = {_norm_company(p.get("company")) for p in people if p.get("company")}
     gaps = [c for c in companies if _norm_company(c.get("name")) not in covered]
 
-    outdir = run / "lif-out"
+    work.mkdir(parents=True, exist_ok=True)
+    outdir = work / "lif-out"
     outdir.mkdir(exist_ok=True)
-    for f in run.glob("lif-batch-*.txt"):
+    for f in work.glob("lif-batch-*.txt"):
         f.unlink()
 
     for i, c in enumerate(gaps[:cap], 1):
-        (run / f"lif-batch-{i:03d}.txt").write_text(
+        (work / f"lif-batch-{i:03d}.txt").write_text(
             f"OutputFile: {(outdir / f'{i:03d}.json').resolve()}\n"
             f"Company:    {c.get('name','')}\n"
             f"City:       {c.get('city') or ''}\n"
@@ -73,14 +79,17 @@ def prep(run: Path, cap: int) -> int:
             f"Website:    {c.get('domain') or ''}\n"
         )
     print(f"Stage 8.6b prep: {len(companies)} companies, {len(people)} already have a person, "
-          f"{len(gaps)} gaps -> {min(len(gaps), cap)} li-finder batches")
+          f"{len(gaps)} gaps -> {min(len(gaps), cap)} li-finder batches in {work}")
     return min(len(gaps), cap)
 
 
-def merge(run: Path) -> int:
+def merge(run: Path, work: Path | None = None) -> int:
+    """Reads lif-out/*.json from `work` (default: the run dir); writes
+    people-found.json into the run dir."""
+    work = work or run
     companies = {_norm_company(c.get("name")): c
                  for c in json.loads((run / "li-companies.json").read_text())}
-    outdir = run / "lif-out"
+    outdir = work / "lif-out"
     found, rejected = [], 0
     seen: set[str] = set()
 
@@ -137,11 +146,16 @@ def main() -> None:
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--cap", type=int, default=120,
                     help="max companies to resolve in one run (one agent each)")
+    ap.add_argument("--work-dir", default=None,
+                    help="where the per-agent lif-batch-NNN.txt files and lif-out/ live "
+                         "(default: the run dir). Kept OUTSIDE project/ so a sub-agent "
+                         "reading a batch file does not pull project/CLAUDE.md into context.")
     a = ap.parse_args()
     run = Path(a.run_dir)
+    work = Path(a.work_dir).resolve() if a.work_dir else run
     if not (run / "li-companies.json").exists():
         sys.exit("ABORT: li-companies.json missing (run draft_linkedin.py --phase prep first)")
-    n = prep(run, a.cap) if a.phase == "prep" else merge(run)
+    n = prep(run, a.cap, work) if a.phase == "prep" else merge(run, work)
     if a.phase == "merge" and n == 0:
         sys.exit(7)     # nothing found — run_fire decides whether that is terminal
 

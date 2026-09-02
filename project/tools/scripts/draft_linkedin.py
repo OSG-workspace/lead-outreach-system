@@ -58,15 +58,23 @@ def prep(run: Path) -> int:
     return len(out)
 
 
-def batch(run: Path, pitch: dict) -> int:
-    """One li-batch file per qualified person: everything the writer needs."""
+def batch(run: Path, pitch: dict, work: Path | None = None) -> int:
+    """One li-batch file per qualified person: everything the writer needs.
+
+    `work` is where the per-agent li-batch-NNN.txt files and the li-out/ dir
+    live (default: the run dir). run_fire passes a dir OUTSIDE project/ so a
+    li-writer reading its batch file does not pull project/CLAUDE.md into
+    context. people-qualified.json is still read from the run dir.
+    """
+    work = work or run
     src = run / "people-qualified.json"
     if not src.exists():
         sys.exit("ABORT: people-qualified.json missing (run qualify_people.py first)")
     people = json.loads(src.read_text())
-    outdir = run / "li-out"
+    work.mkdir(parents=True, exist_ok=True)
+    outdir = work / "li-out"
     outdir.mkdir(exist_ok=True)
-    for f in run.glob("li-batch-*.txt"):
+    for f in work.glob("li-batch-*.txt"):
         f.unlink()
 
     angle = pitch.get("linkedin_angle") or pitch.get("_comment") or ""
@@ -102,13 +110,14 @@ def batch(run: Path, pitch: dict) -> int:
             f"ProofLink: {proof}\n"
             f"CTA: {cta}\n"
         )
-        (run / f"li-batch-{i:03d}.txt").write_text(payload)
-    print(f"Stage 8.6 batch: {len(people)} li-batch files")
+        (work / f"li-batch-{i:03d}.txt").write_text(payload)
+    print(f"Stage 8.6 batch: {len(people)} li-batch files in {work}")
     return len(people)
 
 
-def merge(run: Path) -> int:
-    """Collect li-writer output back onto the person records.
+def merge(run: Path, work: Path | None = None) -> int:
+    """Collect li-writer output (from `work`/li-out, default run/li-out) back
+    onto the person records; people-with-notes.json lands in the run dir.
 
     MATCHED ON THE CANONICAL URL, NEVER THE RAW STRING. The writer is a language
     model echoing back a URL it was handed, and the two person-routes spell the
@@ -119,9 +128,10 @@ def merge(run: Path) -> int:
     `people[NNN-1]` by construction in batch(), so the file index is a reliable
     second key when the echoed URL is unusable.
     """
+    work = work or run
     src = run / "people-qualified.json"
     people = json.loads(src.read_text()) if src.exists() else []
-    outdir = run / "li-out"
+    outdir = work / "li-out"
     notes: dict[str, str] = {}
     by_index: dict[int, str] = {}
     for f in sorted(outdir.glob("*.json")) if outdir.exists() else []:
@@ -164,8 +174,13 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--phase", required=True, choices=["prep", "batch", "merge"])
     ap.add_argument("--run-dir", required=True)
+    ap.add_argument("--work-dir", default=None,
+                    help="where the per-agent li-batch-NNN.txt files and li-out/ live "
+                         "(default: the run dir). Kept OUTSIDE project/ so a sub-agent "
+                         "reading a batch file does not pull project/CLAUDE.md into context.")
     a = ap.parse_args()
     run = Path(a.run_dir)
+    work = Path(a.work_dir).resolve() if a.work_dir else run
     pitch = {}
     pf = run / "pitch.json"
     if pf.exists():
@@ -174,8 +189,8 @@ def main() -> None:
         except Exception:
             pass
     n = {"prep": lambda: prep(run),
-         "batch": lambda: batch(run, pitch),
-         "merge": lambda: merge(run)}[a.phase]()
+         "batch": lambda: batch(run, pitch, work),
+         "merge": lambda: merge(run, work)}[a.phase]()
     if a.phase == "merge" and n == 0:
         sys.exit(7)      # nothing composed — run_fire decides if that is terminal
 

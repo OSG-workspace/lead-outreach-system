@@ -27,9 +27,16 @@ p = argparse.ArgumentParser()
 p.add_argument("--phase", required=True, choices=["prep", "merge"])
 p.add_argument("--run-dir", required=True)
 p.add_argument("--sent-log", default=None)
+p.add_argument("--work-dir", default=None,
+               help="where the per-agent wa-batch-NNN.txt / wa-out-NNN.json files "
+                    "live (default: the run dir). Kept OUTSIDE project/ so a sub-agent "
+                    "reading a batch file does not pull project/CLAUDE.md into context.")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
+# Per-agent batch/out files go here; every run-level artifact stays in ROOT.
+WORK = Path(args.work_dir).resolve() if args.work_dir else ROOT
+WORK.mkdir(parents=True, exist_ok=True)
 WITH_CONTACT = ROOT / "leads-with-contact.json"
 RAW = ROOT / "raw_html"
 OUT = ROOT / "whatsapp-drafted.json"
@@ -146,9 +153,9 @@ def phase_prep() -> None:
     if not WITH_CONTACT.exists():
         raise SystemExit("ABORT: leads-with-contact.json missing (run Stage 5.5 first).")
     leads = load_with_contact()
-    for f in ROOT.glob("wa-batch-*.txt"):
+    for f in WORK.glob("wa-batch-*.txt"):
         f.unlink()
-    for f in ROOT.glob("wa-out-*.json"):
+    for f in WORK.glob("wa-out-*.json"):
         f.unlink()
 
     kept = 0
@@ -165,10 +172,10 @@ def phase_prep() -> None:
             continue
         kept += 1
         nnn = f"{kept:03d}"
-        out_path = ROOT / f"wa-out-{nnn}.json"
+        out_path = WORK / f"wa-out-{nnn}.json"
         files = html_files_for(domain_of(lead))
         html_block = "\n".join(f"  {f}" for f in files) if files else "  (none scraped)"
-        (ROOT / f"wa-batch-{nnn}.txt").write_text(
+        (WORK / f"wa-batch-{nnn}.txt").write_text(
             f"LeadId: {lead['lead_id']}\n"
             f"LeadSlug: {lead['lead_slug']}\n"
             f"Business: {lead['name']}\n"
@@ -179,7 +186,7 @@ def phase_prep() -> None:
             f"HtmlFiles:\n{html_block}\n"
             f"OutputFile: {out_path}\n"
         )
-    print(f"Prepped {kept} wa-writer batches in {ROOT}")
+    print(f"Prepped {kept} wa-writer batches in {WORK}")
     print(f"  dropped no valid CEO mobile: {dropped_no_mobile}  (kill-on-fallback)")
     print("Dispatch this many parallel wa-writer Haiku agents from the orchestrator.")
 
@@ -193,7 +200,7 @@ def phase_merge() -> None:
     skipped = parse_errors = 0
     d_salu = d_money = d_brand = d_phone = d_nolead = d_dup_sent = 0
 
-    for f in sorted(ROOT.glob("wa-out-*.json")):
+    for f in sorted(WORK.glob("wa-out-*.json")):
         try:
             data = json.loads(f.read_text())
         except Exception:

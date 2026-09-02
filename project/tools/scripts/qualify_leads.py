@@ -13,11 +13,15 @@ This gate runs with ZERO agents (pure data already on each lead from extract):
   1. Disqualifies weak leads (freemail-only, below score floor, dead signals).
   2. Ranks the rest by fit (score, then person>role email, then chain size).
   3. Caps to the top-N so a pathological extraction can never fan out into
-     thousands of agents. N = ENRICH_MAX_LEADS env (default 250 — a SAFETY
+     thousands of agents. N = ENRICH_MAX_LEADS env (default 400 — a SAFETY
      CEILING, not a throttle: it is set high enough to enrich every genuinely
      qualified lead in a normal run, so we outreach as many as qualify. Raise it
      (env or `<run>/enrich_cap.txt`) for very large sweeps; it exists only to
      stop a runaway 1000-lead extraction from dispatching 1000 agents).
+     Raised 250 -> 400 on 2026-09-02: measured across 18 runs, the 250 cap
+     discarded 349 leads scoring >= 82 (46% of everything this stage removed),
+     more than the score floor itself (335). gcc-receptionist already ran at 400
+     via enrich_cap.txt and never hit it (339).
 
 Output: leads-qualified.json (same JSONL schema as leads-extracted.json).
 Stage 5.5 (enrich) and Stage 6 (draft) read THIS file, so the cap propagates
@@ -31,9 +35,10 @@ from pathlib import Path
 
 p = argparse.ArgumentParser()
 p.add_argument("--run-dir", required=True)
-p.add_argument("--cap", type=int, default=int(os.environ.get("ENRICH_MAX_LEADS", "250")),
+p.add_argument("--cap", type=int, default=int(os.environ.get("ENRICH_MAX_LEADS", "400")),
                help="max qualified leads to carry into enrichment (top-N by fit). "
-                    "Safety ceiling, default 250 — high enough to enrich every "
+                    "Safety ceiling, default 400 (ENRICH_MAX_LEADS env or a run-local "
+                    "enrich_cap.txt overrides) — high enough to enrich every "
                     "qualified lead in a normal run; raise for huge sweeps.")
 p.add_argument("--min-score", type=int, default=int(os.environ.get("QUALIFY_MIN_SCORE", "82")),
                help="drop leads below this extract score")

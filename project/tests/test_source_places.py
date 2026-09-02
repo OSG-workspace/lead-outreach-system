@@ -96,12 +96,16 @@ class TestSweepOutcome:
         assert code == 8
         assert "already sourced or contacted" in msg
 
-    def test_swept_real_ground_but_api_gave_nothing_halts_loudly(self):
-        """Must NOT be laundered as 'no fresh ground' — it means a broken key,
-        an invalid included_type, or a failing API."""
+    def test_swept_real_ground_but_api_gave_nothing_is_dry_not_fatal(self):
+        """Since 2026-08-11 a sweep that returns nothing is exit 8 (no fresh
+        ground), not exit 1: the caller cannot distinguish a broken key or an
+        invalid included_type from a genuinely empty vertical, and an exit 1
+        here used to kill a multi-source run before its other sources ran. The
+        suspicion survives as the message text; a run where EVERY source is
+        dry still halts at run_fire's 0-candidates gate."""
         code, msg = sweep_outcome(total=0, total_unresolved=0, cities_swept=16, skipped=0)
-        assert code == 1
-        assert "ABORT" in msg
+        assert code == 8
+        assert "returned 0 businesses" in msg
 
     def test_a_single_name_only_row_is_still_yield(self):
         assert sweep_outcome(0, 1, 16, 0)[0] == 0

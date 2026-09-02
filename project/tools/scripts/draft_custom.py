@@ -31,9 +31,16 @@ from pathlib import Path
 p = argparse.ArgumentParser()
 p.add_argument("--phase", required=True, choices=["prep", "merge"])
 p.add_argument("--run-dir", required=True)
+p.add_argument("--work-dir", default=None,
+               help="where the per-agent gap-batch-NNN.txt / gap-out-NNN.json files "
+                    "live (default: the run dir). Kept OUTSIDE project/ so a sub-agent "
+                    "reading a batch file does not pull project/CLAUDE.md into context.")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
+# Per-agent batch/out files go here; every run-level artifact stays in ROOT.
+WORK = Path(args.work_dir).resolve() if args.work_dir else ROOT
+WORK.mkdir(parents=True, exist_ok=True)
 WITH_CONTACT = ROOT / "leads-with-contact.json"
 RAW = ROOT / "raw_html"
 OUT = ROOT / "emails-drafted.json"
@@ -86,16 +93,16 @@ def phase_prep() -> None:
     if not WITH_CONTACT.exists():
         raise SystemExit("ABORT: leads-with-contact.json missing (run Stage 5.5 first).")
     leads = load_with_contact()
-    for f in ROOT.glob("gap-batch-*.txt"):
+    for f in WORK.glob("gap-batch-*.txt"):
         f.unlink()
-    for f in ROOT.glob("gap-out-*.json"):
+    for f in WORK.glob("gap-out-*.json"):
         f.unlink()
 
     no_html = 0
     for i, lead in enumerate(leads, start=1):
         nnn = f"{i:03d}"
-        batch_path = ROOT / f"gap-batch-{nnn}.txt"
-        out_path = ROOT / f"gap-out-{nnn}.json"
+        batch_path = WORK / f"gap-batch-{nnn}.txt"
+        out_path = WORK / f"gap-out-{nnn}.json"
         domain = domain_of(lead)
         files = html_files_for(domain)
         if not files:
@@ -118,7 +125,7 @@ def phase_prep() -> None:
             f"HtmlFiles:\n{html_block}\n"
             f"OutputFile: {out_path}\n"
         )
-    print(f"Prepped {len(leads)} gap-writer batches in {ROOT}")
+    print(f"Prepped {len(leads)} gap-writer batches in {WORK}")
     if no_html:
         print(f"  note: {no_html}/{len(leads)} leads had no scraped pages (gap-writer may web-search or skip).")
     print("Dispatch this many parallel gap-writer Haiku agents from the orchestrator.")
@@ -181,7 +188,7 @@ def phase_merge() -> None:
     dropped_no_email = 0
     dropped_no_lead = 0
 
-    for f in sorted(ROOT.glob("gap-out-*.json")):
+    for f in sorted(WORK.glob("gap-out-*.json")):
         try:
             data = json.loads(f.read_text())
         except Exception:

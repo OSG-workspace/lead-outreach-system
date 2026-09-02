@@ -42,9 +42,16 @@ except Exception:  # harvester best-effort; prep still works without it
 p = argparse.ArgumentParser()
 p.add_argument("--phase", required=True, choices=["prep", "merge"])
 p.add_argument("--run-dir", required=True)
+p.add_argument("--work-dir", default=None,
+               help="where the per-agent lead-batch-NNN.txt / lead-out-NNN.json files "
+                    "live (default: the run dir). Kept OUTSIDE project/ so a sub-agent "
+                    "reading a batch file does not pull project/CLAUDE.md into context.")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
+# Per-agent batch/out files go here; every run-level artifact stays in ROOT.
+WORK = Path(args.work_dir).resolve() if args.work_dir else ROOT
+WORK.mkdir(parents=True, exist_ok=True)
 QUALIFIED = ROOT / "leads-qualified.json"
 EXTRACTED = QUALIFIED if QUALIFIED.exists() else (ROOT / "leads-extracted.json")
 RAW = ROOT / "raw_html"
@@ -84,16 +91,16 @@ def phase_prep() -> None:
     if not EXTRACTED.exists():
         raise SystemExit("ABORT: leads-qualified.json / leads-extracted.json missing.")
     leads = load_leads()
-    for f in ROOT.glob("lead-batch-*.txt"):
+    for f in WORK.glob("lead-batch-*.txt"):
         f.unlink()
-    for f in ROOT.glob("lead-out-*.json"):
+    for f in WORK.glob("lead-out-*.json"):
         f.unlink()
 
     no_html = 0
     for i, lead in enumerate(leads, start=1):
         nnn = f"{i:03d}"
-        batch_path = ROOT / f"lead-batch-{nnn}.txt"
-        out_path = ROOT / f"lead-out-{nnn}.json"
+        batch_path = WORK / f"lead-batch-{nnn}.txt"
+        out_path = WORK / f"lead-out-{nnn}.json"
         domain = domain_of(lead)
         cc = lead.get("country_code", "")
         country_name = COUNTRY_NAMES.get(cc, cc)
@@ -133,7 +140,7 @@ def phase_prep() -> None:
             f"HtmlFiles:\n{html_block}\n"
             f"OutputFile: {out_path}\n"
         )
-    print(f"Prepped {len(leads)} lead-writer batches in {ROOT}")
+    print(f"Prepped {len(leads)} lead-writer batches in {WORK}")
     if no_html:
         print(f"  note: {no_html}/{len(leads)} leads had no scraped pages "
               f"(lead-writer may web-search or skip).")
@@ -194,7 +201,7 @@ def phase_merge() -> None:
     parse_errors = skipped = 0
     d_nolead = d_notfound = d_name = d_email = d_salutation = d_money = d_link = 0
 
-    for f in sorted(ROOT.glob("lead-out-*.json")):
+    for f in sorted(WORK.glob("lead-out-*.json")):
         try:
             data = json.loads(f.read_text())
         except Exception:
