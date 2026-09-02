@@ -99,6 +99,18 @@ def main() -> None:
             cfg = json.loads(QUALIFY_CFG.read_text())
         except Exception:
             cfg = {}
+    # Per-run signal keep-list. A campaign whose offer is NOT the thing the
+    # dead signal proves solved opts out here (fixture ships a qualify.json
+    # with {"keep_signals": ["modern_booking"]}): the US back-office offers
+    # (billing leakage, credentialing, consult conversion, maintenance/AP)
+    # are untouched by a booking widget, and dropping those leads would also
+    # blacklist the domain permanently. Absent key = unchanged behavior.
+    keep_signals = {s for s in cfg.get("keep_signals", []) if isinstance(s, str)}
+    dead_signals = DEAD_SIGNALS - keep_signals
+    if keep_signals & DEAD_SIGNALS:
+        print(f"  keep_signals: {sorted(keep_signals & DEAD_SIGNALS)} exempt "
+              f"from the dead-signal drop this run")
+
     require_hotel_volume = bool(cfg.get("require_hotel_size_volume"))
     min_volume = VOLUME_RANK.get(str(cfg.get("min_hotel_volume", "medium")).lower(), 1)
 
@@ -135,7 +147,7 @@ def main() -> None:
             dropped_freemail += 1
             disqualified.append((_domain(l), "freemail-only"))
             continue
-        if l.get("signal") in DEAD_SIGNALS:
+        if l.get("signal") in dead_signals:
             dropped_signal += 1
             disqualified.append((_domain(l), f"dead-signal:{l.get('signal')}"))
             continue

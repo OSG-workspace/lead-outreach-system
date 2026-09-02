@@ -105,6 +105,44 @@ SUBJECT_TEMPLATE = _pitch.get("subject_template", DEFAULT_SUBJECT_TEMPLATE)
 BODY_TEMPLATE = _pitch.get("body_template", DEFAULT_BODY_TEMPLATE)
 DEFAULT_VERTICAL = _pitch.get("default_vertical", "chains")
 
+# Fixed-copy VARIANTS (pitch.json "variants", added 2026-08-26 for
+# us-law-firms). A campaign whose audience splits into sub-segments that must
+# NEVER receive each other's pitch (hourly-billing firms vs personal-injury
+# firms) declares one entry per sub-segment, each with its own
+# subject_template/body_template plus a `match_html_any` keyword list. The
+# first variant with a keyword hit in the lead's scraped raw_html pages wins;
+# no hit, no variants, or raw_html already cleaned -> top-level templates.
+# Copy stays fixed either way: variants select BETWEEN approved templates,
+# they never rewrite one.
+VARIANTS = [v for v in (_pitch.get("variants") or [])
+            if v.get("body_template") and v.get("match_html_any")]
+
+
+def _lead_site_text(lead: dict) -> str:
+    """Lowercased concat of the lead's fetched pages (same naming as fetch/extract)."""
+    domain = (lead.get("website") or "").split("//")[-1].split("/")[0].removeprefix("www.")
+    if not domain:
+        return ""
+    safe = domain.replace("/", "_")
+    raw_dir = ROOT / "raw_html"
+    chunks = [f.read_text(errors="ignore") for f in sorted(raw_dir.glob(f"{safe}__*.html"))]
+    if not chunks:
+        legacy = raw_dir / f"{safe}.html"
+        if legacy.exists():
+            chunks = [legacy.read_text(errors="ignore")]
+    return "\n".join(chunks).lower()
+
+
+def _pick_templates(lead: dict) -> tuple[str, str, str]:
+    """(subject_template, body_template, variant_name) for this lead."""
+    if VARIANTS:
+        text = _lead_site_text(lead)
+        for v in VARIANTS:
+            if text and any(k.lower() in text for k in v["match_html_any"]):
+                return (v.get("subject_template", SUBJECT_TEMPLATE),
+                        v["body_template"], v.get("name", "variant"))
+    return SUBJECT_TEMPLATE, BODY_TEMPLATE, "default"
+
 # Hard rule: no em-dashes anywhere in body copy (em-dash = U+2014).
 # Replace stray em-dashes with commas before draft serialization. en-dashes also.
 _DASH_RE = re.compile(r"\s*[—–]\s*")
@@ -137,8 +175,9 @@ def draft(lead: dict) -> dict:
     salutation = f"{title} {last}" if (last and title) else lead["contact_first_name"]
     fmt = dict(name=name, country=country, vertical=vertical, salutation=salutation,
                opener=opener, dialect=dialect)
-    subject = _strip_dashes(SUBJECT_TEMPLATE.format_map(fmt))
-    body_text = _strip_dashes(BODY_TEMPLATE.format_map(fmt))
+    subj_tpl, body_tpl, variant_name = _pick_templates(lead)
+    subject = _strip_dashes(subj_tpl.format_map(fmt))
+    body_text = _strip_dashes(body_tpl.format_map(fmt))
 
     paragraphs = body_text.strip().split("\n\n")
     body_html = "\n".join(f"<p>{p.replace(chr(10),'<br>')}</p>" for p in paragraphs)
@@ -168,6 +207,7 @@ def draft(lead: dict) -> dict:
         "funnel_status": "needs_signal",
         "signal_used": signal,
         "primary_gap": signal,
+        "template_variant": variant_name,
         "email_class": "direct_person",
         "send_gate": "pass",
         "country_code": lead["country_code"],

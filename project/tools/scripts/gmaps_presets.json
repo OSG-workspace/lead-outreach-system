@@ -1,0 +1,572 @@
+{
+  "_comment": "Curated vertical -> Google Maps SEARCH TERMS + category denylist, shared by EVERY campaign (same role overture_presets.json plays for Overture). source_gmaps.py resolves a vertical here first, then falls back to the overture preset. Lookup strips campaign suffixes, so `clinic-gcc`, `clinic-us` and `clinic-lb` all read the `clinic` entry: ledger ground stays per-campaign, precision is shared, and tuning a vertical once improves every fixture that fires it.\n\nTHREE FIELDS. `terms` is the TIME dial, `keep` is the PRECISION dial, `exclude` is the noise dial.\n  terms   — what a CUSTOMER would type into Maps. Maps is a text search, not a tag filter, so 'emergency plumber' beats the ontology label 'plumbing'. Max 6 (MAX_TERMS_DEFAULT): each term is one query per city, so terms are the time dial.\n  keep    — extra category STEMS that are accepted but NEVER searched, so widening precision costs no time. Stems, not words: 'dermatolog' catches Dermatology AND Dermatologist. This exists because the term-token gate is morphology-naive — measured in Muscat it dropped Dentist (7), Dermatologist (3) and Physical therapist (2), since 'dental', 'dermatology' and 'physiotherapy' are not substrings of what Maps returned.\n  exclude — Maps categories that are real businesses but the WRONG ones. Matched as a lowercase substring against the row's category AND its full categories list. Checked FIRST, so it beats keep: a clinic whose categories include Hospital is still dropped.\n\nHOW THE PRECISION GATE ACTUALLY WORKS (require_category_match, default true): a row is kept when any token >3 chars from any term appears in any of its categories. So `terms` doubles as the allowlist — if a category you WANT is not reachable from some term's tokens, it is dropped. That is why hotel carries 'hostel' and 'lodge': measured in Barcelona, Maps returns Hotel 12, Lodge 2, Hostel 2, and without those terms the last four rows would be discarded.\n\nMEASURED 2026-08-18 (depth 1, one city) — these four are observed, not guessed:\n  trades/plumber, Sydney      Plumber 22/22 (100% on-ICP)\n  salon, Dubai                Beauty salon 16/16 (100%)\n  clinic, Dubai               Medical Center 13, Medical clinic 5, Home health care 1, Hospital 1\n  hotel, Barcelona            Hotel 12, Lodge 2, Hostel 2\n  restaurant, Dubai           Restaurant 8, + cuisine-specific variants (all contain 'restaurant')\n  carservice, Dubai           Auto repair shop 14, Car repair and maintenance 4, Mechanic 2\n  realestate, Dubai           Real estate agent 8, agency 8, consultant 3, commercial 1\n  homeservices, Dubai         Handyman/Handywoman/Handyperson 18, Building restoration 1, Property maintenance 1\n  law, New York               Law firm 9, Personal injury attorney 5, Lawyer 4, Legal services 1\n  property, New York          Property management company 20/20 (100%)\n  staffing, New York          Employment agency 15, Recruiter 3, Temp agency 2\n\nTHREE TERMS EXIST ONLY TO SAVE A MEASURED CATEGORY from the token gate, which ignores tokens of 3 characters or fewer: 'car mechanic' rescues `Mechanic`, 'recruiter' rescues `Recruiter` (the token 'recruitment' is NOT a substring of it), and 'legal services' rescues `Legal services` (note 'law' is 3 chars, so `Law firm` survives only via 'firm'). Add a term whenever a run reports dropping a category you actually want.\nThe rest are reasoned from each fixture's ICP and NOT yet measured. Every run prints the categories it dropped, so tune from that output rather than from this comment.\n\nDELIBERATELY ABSENT: `enterprise` (lb-enterprise). 'The biggest Lebanese companies' is not a Maps category and no search phrase enumerates it; that fixture keeps its existing sources.",
+  "trades": {
+    "terms": [
+      "emergency plumber",
+      "electrician",
+      "locksmith",
+      "roofing contractor",
+      "hvac contractor",
+      "glazier"
+    ],
+    "exclude": [
+      "wholesaler",
+      "manufacturer",
+      "building materials",
+      "hardware store",
+      "plumbing supply",
+      "supply store",
+      "distributor"
+    ],
+    "keep": [
+      "plumb",
+      "electric",
+      "locksmith",
+      "roof",
+      "hvac",
+      "air condition",
+      "glazier",
+      "glass",
+      "heating",
+      "drain"
+    ]
+  },
+  "homeservices": {
+    "terms": [
+      "handyman",
+      "cleaning service",
+      "pest control service",
+      "landscaping service",
+      "moving company",
+      "painter"
+    ],
+    "exclude": [
+      "equipment rental",
+      "supply store",
+      "hardware store",
+      "wholesaler",
+      "manufacturer"
+    ],
+    "keep": [
+      "handy",
+      "clean",
+      "pest",
+      "landscap",
+      "garden",
+      "mov",
+      "paint",
+      "maintenance",
+      "restoration",
+      "repair"
+    ]
+  },
+  "construction": {
+    "terms": [
+      "general contractor",
+      "construction company",
+      "civil engineering company",
+      "building contractor",
+      "architect"
+    ],
+    "exclude": [
+      "building materials",
+      "hardware store",
+      "wholesaler",
+      "manufacturer",
+      "equipment rental"
+    ],
+    "keep": [
+      "contractor",
+      "construct",
+      "engineer",
+      "architect",
+      "builder",
+      "civil"
+    ]
+  },
+  "hotel": {
+    "terms": [
+      "hotel",
+      "boutique hotel",
+      "resort",
+      "guest house",
+      "hostel",
+      "lodge"
+    ],
+    "exclude": [
+      "travel agency",
+      "tour operator",
+      "real estate",
+      "apartment building",
+      "hotel supply",
+      "car rental"
+    ],
+    "keep": [
+      "hotel",
+      "resort",
+      "hostel",
+      "lodge",
+      "guest",
+      "inn",
+      "motel",
+      "bed and breakfast",
+      "serviced apartment"
+    ]
+  },
+  "restaurant": {
+    "terms": [
+      "restaurant",
+      "cafe",
+      "bakery",
+      "coffee shop",
+      "bistro"
+    ],
+    "exclude": [
+      "food wholesaler",
+      "grocery store",
+      "supermarket",
+      "catering supply",
+      "distributor",
+      "food manufacturer"
+    ],
+    "keep": [
+      "restaurant",
+      "cafe",
+      "café",
+      "bakery",
+      "coffee",
+      "bistro",
+      "brasserie",
+      "pizzeria",
+      "diner",
+      "eatery"
+    ]
+  },
+  "clinic": {
+    "terms": [
+      "medical clinic",
+      "dental clinic",
+      "medical center",
+      "physiotherapy clinic",
+      "dermatology clinic",
+      "eye clinic"
+    ],
+    "exclude": [
+      "hospital",
+      "pharmacy",
+      "medical supply",
+      "medical laboratory",
+      "government",
+      "blood bank"
+    ],
+    "keep": [
+      "clinic",
+      "medical",
+      "dentist",
+      "dental",
+      "orthodont",
+      "dermatolog",
+      "therap",
+      "physio",
+      "doctor",
+      "physician",
+      "polyclinic",
+      "optometr",
+      "optical",
+      "eye care",
+      "health center",
+      "health centre",
+      "surgeon",
+      "pediatric",
+      "chiroprac"
+    ]
+  },
+  "veterinary": {
+    "terms": [
+      "veterinary clinic",
+      "animal hospital",
+      "veterinarian"
+    ],
+    "exclude": [
+      "pet store",
+      "pet grooming",
+      "pet supply",
+      "animal shelter"
+    ],
+    "keep": [
+      "veterinar",
+      "animal hospital",
+      "vet clinic"
+    ]
+  },
+  "salon": {
+    "terms": [
+      "beauty salon",
+      "hair salon",
+      "nail salon",
+      "barber shop",
+      "day spa",
+      "massage center"
+    ],
+    "exclude": [
+      "beauty supply",
+      "cosmetics store",
+      "wholesaler",
+      "supply store"
+    ],
+    "keep": [
+      "salon",
+      "barber",
+      "beauty",
+      "nail",
+      "hair",
+      "spa",
+      "massage",
+      "aesthetic",
+      "grooming"
+    ]
+  },
+  "carservice": {
+    "terms": [
+      "auto repair shop",
+      "car service center",
+      "car mechanic",
+      "tyre shop",
+      "car body shop",
+      "car detailing"
+    ],
+    "exclude": [
+      "car dealer",
+      "auto parts",
+      "gas station",
+      "petrol station",
+      "car rental",
+      "driving school"
+    ],
+    "keep": [
+      "auto",
+      "car repair",
+      "mechanic",
+      "tyre",
+      "tire",
+      "body shop",
+      "detail",
+      "garage",
+      "muffler",
+      "transmission"
+    ]
+  },
+  "auto": {
+    "terms": [
+      "auto repair shop",
+      "car service center",
+      "car mechanic",
+      "tyre shop",
+      "car body shop",
+      "car detailing"
+    ],
+    "exclude": [
+      "car dealer",
+      "auto parts",
+      "gas station",
+      "petrol station",
+      "car rental",
+      "driving school"
+    ],
+    "keep": [
+      "auto",
+      "car repair",
+      "mechanic",
+      "tyre",
+      "tire",
+      "body shop",
+      "detail",
+      "garage",
+      "muffler",
+      "transmission"
+    ]
+  },
+  "realestate": {
+    "terms": [
+      "real estate agency",
+      "estate agent",
+      "property management company",
+      "letting agency"
+    ],
+    "exclude": [
+      "apartment building",
+      "apartment complex",
+      "housing complex",
+      "condominium",
+      "government"
+    ],
+    "keep": [
+      "real estate",
+      "estate agent",
+      "property",
+      "realtor",
+      "letting",
+      "broker"
+    ]
+  },
+  "property": {
+    "terms": [
+      "property management company",
+      "real estate agency",
+      "letting agency",
+      "commercial property management"
+    ],
+    "exclude": [
+      "apartment building",
+      "apartment complex",
+      "housing complex",
+      "condominium",
+      "government"
+    ],
+    "keep": [
+      "property",
+      "real estate",
+      "estate agent",
+      "realtor",
+      "letting",
+      "facility management"
+    ]
+  },
+  "law": {
+    "terms": [
+      "law firm",
+      "attorney",
+      "lawyer",
+      "legal services",
+      "personal injury attorney",
+      "immigration lawyer"
+    ],
+    "exclude": [
+      "courthouse",
+      "government office",
+      "legal aid",
+      "district attorney",
+      "police"
+    ],
+    "keep": [
+      "law",
+      "attorney",
+      "lawyer",
+      "legal",
+      "solicitor",
+      "advocate",
+      "notary"
+    ]
+  },
+  "staffing": {
+    "terms": [
+      "staffing agency",
+      "employment agency",
+      "recruiter",
+      "recruitment agency",
+      "temp agency",
+      "executive search firm"
+    ],
+    "exclude": [
+      "government office",
+      "job centre",
+      "university",
+      "career counseling"
+    ],
+    "keep": [
+      "staffing",
+      "employment",
+      "recruit",
+      "temp agency",
+      "headhunt",
+      "talent",
+      "human resource"
+    ]
+  },
+  "insurance": {
+    "terms": [
+      "insurance agency",
+      "insurance broker",
+      "health insurance agency",
+      "car insurance agency",
+      "life insurance agency"
+    ],
+    "exclude": [
+      "government office",
+      "bank",
+      "hospital",
+      "atm"
+    ],
+    "keep": [
+      "insurance",
+      "insurer",
+      "broker",
+      "assurance",
+      "takaful"
+    ]
+  },
+  "fintech": {
+    "terms": [
+      "money transfer service",
+      "currency exchange",
+      "financial services company",
+      "financial advisor",
+      "payment service"
+    ],
+    "exclude": [
+      "bank",
+      "atm",
+      "government office",
+      "pawn shop",
+      "casino"
+    ],
+    "keep": [
+      "financ",
+      "money transfer",
+      "currency exchange",
+      "payment",
+      "remittance",
+      "exchange",
+      "fintech",
+      "advisor"
+    ]
+  },
+  "fmcg": {
+    "terms": [
+      "food distributor",
+      "wholesale distributor",
+      "beverage distributor",
+      "importer and exporter",
+      "trading company"
+    ],
+    "exclude": [
+      "supermarket",
+      "grocery store",
+      "convenience store",
+      "restaurant",
+      "cafe"
+    ],
+    "keep": [
+      "distribut",
+      "wholesal",
+      "import",
+      "export",
+      "trading",
+      "supplier",
+      "logistics"
+    ]
+  },
+  "supermarket": {
+    "terms": [
+      "supermarket",
+      "grocery store",
+      "hypermarket",
+      "mini market",
+      "convenience store"
+    ],
+    "exclude": [
+      "wholesaler",
+      "cash and carry",
+      "warehouse",
+      "distributor"
+    ],
+    "keep": [
+      "supermarket",
+      "grocer",
+      "hypermarket",
+      "market",
+      "convenience store",
+      "food store"
+    ]
+  },
+  "ngo": {
+    "terms": [
+      "non profit organization",
+      "charity organization",
+      "humanitarian organization",
+      "foundation"
+    ],
+    "exclude": [
+      "government office",
+      "embassy",
+      "city hall"
+    ],
+    "keep": [
+      "non-profit",
+      "non profit",
+      "nonprofit",
+      "charit",
+      "ngo",
+      "foundation",
+      "humanitarian",
+      "association",
+      "relief"
+    ]
+  },
+  "marketing": {
+    "terms": [
+      "marketing agency",
+      "digital marketing agency",
+      "advertising agency",
+      "social media agency",
+      "seo agency",
+      "branding agency"
+    ],
+    "exclude": [
+      "printing",
+      "signage",
+      "sign shop",
+      "billboard",
+      "outdoor advertising",
+      "promotional products",
+      "gift",
+      "public relations",
+      "media company",
+      "production company",
+      "photography",
+      "event planner",
+      "event management",
+      "telemarketing",
+      "call center"
+    ],
+    "keep": [
+      "marketing",
+      "advertis",
+      "brand",
+      "seo",
+      "social media",
+      "digital",
+      "e-commerce",
+      "lead generation",
+      "growth",
+      "creative agency"
+    ]
+  },
+  "education": {
+    "terms": [
+      "private school",
+      "training center",
+      "tutoring center",
+      "language school",
+      "nursery school"
+    ],
+    "exclude": [
+      "government school",
+      "public library",
+      "university department",
+      "student housing"
+    ],
+    "keep": [
+      "school",
+      "training",
+      "tutor",
+      "academy",
+      "institute",
+      "language",
+      "nursery",
+      "kindergarten",
+      "college",
+      "education"
+    ]
+  }
+}

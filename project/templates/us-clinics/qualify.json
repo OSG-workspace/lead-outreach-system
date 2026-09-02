@@ -1,0 +1,4 @@
+{
+  "_comment": "US back-office offers (2026-08-26): a modern booking widget no longer proves the gap solved (offer is billing leakage / credentialing / consult conversion / maintenance+AP), and dropping the lead would also blacklist its domain permanently. keep_signals exempts it from the extract-time drop and the qualify DEAD_SIGNALS for this campaign only.",
+  "keep_signals": ["modern_booking"]
+}

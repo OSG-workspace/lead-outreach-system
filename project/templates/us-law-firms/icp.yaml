@@ -1,41 +1,53 @@
-icp_name: US Small Law Firms — Inbox & Scheduling Automation
+icp_name: US Law Firms — Time-Capture / Billing-Leakage Agent
 description: >
-  Small US law firms (2-20 attorneys) that handle new-client intake, consult
-  booking, and follow-ups manually. Offer: an AI assistant (Automate, David Geha)
-  that quietly removes that repetitive inbox/scheduling work. Every email is
-  custom-written per firm around its specific gap. No money talk in the email.
-  See vault/lead-outreach/targeting/us-inbox-scheduling.md (+ .OVERRIDES.md).
+  US law firms. Offer #1 (default template 1A, hourly-billing firms:
+  litigation, insurance defense, corporate mid-law, family law, 10-200
+  attorneys): an agent that reconstructs unbilled time from calendar, email,
+  and documents and drafts pre-bills — firms invoice only ~88% of the work
+  done and 15-30% of billable hours are never recorded. Offer #2 (variant 1B,
+  plaintiff-PI firms, 5-50 attorneys, contingency): medical-record
+  summarization into chronologies and demand packages. NEVER mix the two —
+  PI firms do not bill hourly. NEVER pitch intake/receptionist/missed calls
+  (outsourced since 1965, saturated). Fixed copy per pitch.json; the PI
+  variant is auto-routed on the firm's own pages.
+  See vault/lead-outreach/targeting/us-law-firms-scope.md.
 
 geography: US            # countries.txt = US enforces the filter
 country_filter: US
 vertical: law            # this run targets ONE vertical (see vertical.txt)
 
+# Precise qualification scope for this vertical (2025-26 US playbook, corrected 2026-08-26).
+# Read it before qualifying/gap-finding. Cross-vertical context: us-playbook-2026.md.
+qualification_scope: vault/lead-outreach/targeting/us-law-firms-scope.md
+
 # NOTE: extract_leads.py scoring is hardcoded (person 90 / role 82 / personal 78
-# + branch bonus); this block documents intent. The draft stage is custom
-# (draft_mode.txt = custom) so the gap-writer agent does per-firm gap-finding.
+# + branch bonus); this block documents intent. Drafting is template mode
+# (draft_mode.txt = template): pitch.json holds the user's exact copy, with the
+# PI variant selected by draft_emails.py `variants` keyword routing.
 scoring:
   qualify_threshold: 70
   send_threshold: 70
 
 target_person:
   - managing partner
-  - office manager
-  - operations manager
-firm_size_attorneys: "2-20"
+  - chief operating officer / executive director
+  - billing manager
+firm_size_attorneys: "10-200 hourly-billing (PI records variant: 5-50)"
 
-# Buying signals the gap-writer should look for on each firm's site.
+# Buying signals per the scope file (documentation of intent — routing and the
+# modern_booking exemption are enforced by pitch.json + qualify.json).
 signals:
   positive:
-    - manual_intake_email
-    - contact_form_only
-    - phone_led_intake
-    - shared_inbox_visible          # info@ / office@ on contact page
-    - no_online_scheduling
-    - hiring_intake_or_admin_role   # job posting => overloaded
+    - hourly_billing_stated         # rates / defense / corporate work => template 1A
+    - billing_job_posting           # "billing specialist" / "legal biller" / "e-billing coordinator"
+    - practice_mgmt_stack           # Clio / Filevine / Litify / CASEpeer => integration-ready
+    - multiple_offices
+    - pi_contingency_markers        # "no win no fee" / PI practice pages => template 1B
+    - pi_records_job_posting        # "medical records clerk" / "demand writer" => 1B pain confirmed
   negative:
-    - modern_booking                # already has Calendly/etc => skip (gap solved)
+    - solo_or_tiny_firm             # under ~10 attorneys (PI: under 5), can't pay
+    - amlaw_biglaw                  # enterprise legal-AI buyers, skip
 
-draft_mode: custom        # gap-writer agent, NOT the template draft_emails.py
+draft_mode: template      # pitch.json fixed copy (1A default + 1B pi variant)
 no_emdash: true
-no_money_talk: true       # never mention price/fee/retainer/commission in copy
-keep_signature_link: true # David Geha / Automate, automatelb.com in every email
+keep_signature_link: true # osgdev.com in every email signature (per pitch.json)

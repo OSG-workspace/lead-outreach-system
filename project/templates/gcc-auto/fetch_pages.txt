@@ -1,0 +1,6 @@
+# Stage 4 page-list override for gcc-auto (see fetch_html.py module docstring).
+# Same reasoning as au-trades: auto repair / auto-service businesses are
+# small owner-operator shops, not organizations with leadership/people pages.
+home|/
+contact|/contact
+about|/about

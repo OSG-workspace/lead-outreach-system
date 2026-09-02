@@ -36,6 +36,19 @@ RAW = ROOT / "raw_html"
 CANDIDATES = ROOT / "candidates-all.txt"
 OUT = ROOT / "leads-extracted.json"
 
+# Per-run signal keep-list, same qualify.json key qualify_leads.py honors
+# (added 2026-08-26). A campaign whose offer is NOT solved by a detected
+# signal (the US back-office offers vs modern_booking) opts out of the silent
+# drop below; absent file/key = unchanged behavior for every other fixture.
+KEEP_SIGNALS: set = set()
+_qcfg_file = ROOT / "qualify.json"
+if _qcfg_file.exists():
+    try:
+        KEEP_SIGNALS = {s for s in json.loads(_qcfg_file.read_text()).get("keep_signals", [])
+                        if isinstance(s, str)}
+    except Exception:
+        KEEP_SIGNALS = set()
+
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
 # SHARED nets — do NOT re-declare these locally.
@@ -54,6 +67,10 @@ from email_utils import (ROLE_RE, JUNK_RE, FREEMAIL,          # noqa: E402
 # Freemail/ISP variants outside the base set (live.com.au, bigpond.com, …).
 from name_from_email import ALL_FREEMAIL as FREEMAIL_ALL      # noqa: E402
 from traffic_signals import detect_traffic                    # noqa: E402
+# Identity-bearing name tokens — the same net Stage 2.5 uses to PROVE a resolved
+# domain belongs to the business. Here it catches the rows that arrived WITH a
+# domain from a source we trusted (Maps' web_site field) and never got proved.
+from resolve_domains import name_tokens                       # noqa: E402
 
 SENT = set()
 sent_log_path = Path(args.sent_log) if args.sent_log else ROOT.parent.parent / "vault" / "lead-outreach" / "sent-log.md"
@@ -287,6 +304,7 @@ def score_for(klass: str, branches: int, pages: list[str], num_emails: int) -> i
 
 leads = []
 candidates_rows = [l.split("|") for l in CANDIDATES.read_text().splitlines() if l.strip()]
+mismatched: list[tuple[str, str]] = []
 
 for row in candidates_rows:
     if len(row) < 5: continue
@@ -295,6 +313,19 @@ for row in candidates_rows:
     if not html:
         continue
     html_lower = html.lower()
+    # The site must at least MENTION the business it is supposed to be. A
+    # lenient check on purpose — one identity token anywhere in the domain or
+    # the fetched pages — so transliteration and rebrands survive; it only
+    # fires when NOTHING matches, which is the "flynas.com for a men's salon"
+    # case. Latin tokens only: an Arabic-named business with an English-only
+    # site is not a mismatch, and its Arabic tokens would never appear.
+    # Measured on the 2026-08-31/09-01 gcc-receptionist fires: 16% of qualified
+    # leads (31/191, 33/202) failed this, each one a dead fetch + name-finder
+    # and a wrong domain retired to disqualified-log forever.
+    latin_tokens = [t for t in name_tokens(name) if t.isascii()]
+    if len(latin_tokens) >= 2 and not any(t in domain or t in html_lower for t in latin_tokens):
+        mismatched.append((name, domain))
+        continue
     # Decode email-relevant encodings/obfuscations FIRST (so %40 -> @ survives),
     # then strip the remaining URL-encoded garbage that glues to addresses.
     clean_html = deobfuscate(html)
@@ -319,7 +350,7 @@ for row in candidates_rows:
     elif best in SENT:
         continue
     signal, evidence = detect_signal(html_lower)
-    if signal == "modern_booking":
+    if signal == "modern_booking" and signal not in KEEP_SIGNALS:
         continue
 
     try:
@@ -412,6 +443,12 @@ if n_contaminated and not args.allow_no_email:
 leads.sort(key=lambda x: -x["score"])
 OUT.write_text("\n".join(json.dumps(l, ensure_ascii=False) for l in leads) + "\n")
 print(f"Extracted {len(leads)} leads")
+if mismatched:
+    print(f"  {len(mismatched)} candidate(s) dropped: the fetched site never mentions the "
+          f"business (wrong website on the source listing), e.g. "
+          + "; ".join(f"{n[:32]!r} -> {d}" for n, d in mismatched[:4]))
+    (ROOT / "leads-mismatched.json").write_text(
+        "\n".join(json.dumps({"name": n, "domain": d}, ensure_ascii=False) for n, d in mismatched) + "\n")
 if n_contaminated:
     print(f"  ({n_contaminated} lead(s) lost a shared off-domain address)")
 print(f"Person-class: {sum(1 for l in leads if l['email_class']=='person')}")

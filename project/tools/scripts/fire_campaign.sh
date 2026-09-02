@@ -39,7 +39,7 @@ if isinstance(srcs,list) and srcs:
     names=[]
     for i,s in enumerate(srcs,1):
         if not isinstance(s,dict) or not s.get('type'): sys.exit('BADSRC:%d' % i)
-        if s['type'] not in ('map','places','directory','overture'): sys.exit('BADTYPE:%s' % s['type'])
+        if s['type'] not in ('map','places','directory','overture','gmaps'): sys.exit('BADTYPE:%s' % s['type'])
         if s['type']=='map':
             ts=s.get('targets') or c.get('targets') or ([c] if c.get('selector') else [])
             if not ts: sys.exit('NONE')
@@ -52,6 +52,15 @@ if isinstance(srcs,list) and srcs:
             if [t for t in ts if not (t.get('included_type') and t.get('vertical'))]:
                 sys.exit('BAD:places source %d needs included_type+vertical' % i)
             names += ['places:'+t['vertical'] for t in ts]
+        elif s['type']=='gmaps':
+            # terms are optional: they fall back to the shared overture presets
+            # via the target's vertical (source_gmaps.terms_for aborts with the
+            # known-preset list if a vertical matches none).
+            ts=s.get('targets') or []
+            if not ts: sys.exit('BAD:gmaps source %d has no targets' % i)
+            if [t for t in ts if not t.get('vertical')]:
+                sys.exit('BAD:gmaps source %d needs a vertical per target' % i)
+            names += ['gmaps:'+t['vertical'] for t in ts]
         elif s['type']=='overture':
             # categories are optional here: they resolve from the shared
             # overture_presets.json at run time (source_overture.py aborts with
@@ -74,7 +83,7 @@ else:
     case "$TGT" in
       NONE)     echo "ABORT: $TPL/sourcing.json needs a \"selector\"+\"vertical\" (the OSM tag filter naming this run's target audience, e.g. '\"office\"=\"lawyer\"'), a \"targets\" list for a multi-vertical campaign, or a \"sources\" list."; exit 1;;
       BADSRC*)  echo "ABORT: $TPL/sourcing.json sources entries each need a \"type\" ($TGT)."; exit 1;;
-      BADTYPE*) echo "ABORT: $TPL/sourcing.json has an unknown source type ($TGT). Known: overture, map, places, directory."; exit 1;;
+      BADTYPE*) echo "ABORT: $TPL/sourcing.json has an unknown source type ($TGT). Known: overture, gmaps, map, places, directory."; exit 1;;
       BAD*)     echo "ABORT: $TPL/sourcing.json target entries are incomplete ($TGT)."; exit 1;;
       *)        echo "ABORT: $TPL/sourcing.json is not valid JSON."; exit 1;;
     esac
@@ -140,4 +149,23 @@ mkdir -p "runs/$SLUG"
 cp "$TPL"/* "runs/$SLUG"/ 2>/dev/null || true
 echo "Bootstrapped runs/$SLUG from $TPL (draft_mode=$DRAFT_MODE)."
 
+# --- keep the machine awake for the whole fire ---
+# A fire is a 1-3 hour wall-clock job, and EVERY sub-agent timeout in
+# agent_dispatch.py is wall-clock. Machine sleep therefore does not pause a run,
+# it FAILS it: on 2026-08-17-au-trades-1 the lid shut at 21:48:33 ("Clamshell
+# Sleep"), the run spent ~5 of its 6.5 hours in deep idle, and name-finders that
+# were doing nothing wrong were killed at rc=-1 and tripped the Stage 5.5
+# kill-on-fallback gate. Three of that day's five fires died this way.
+#   -i  prevent idle system sleep
+#   -m  keep the disk from idling out
+#   -s  prevent system sleep (holds only on AC power)
+# LIMIT, stated plainly: nothing here can stop CLAMSHELL sleep on battery.
+# Closing the lid unplugged still sleeps the Mac mid-run, so we warn instead.
+if command -v caffeinate >/dev/null 2>&1; then
+    if ! pmset -g ps 2>/dev/null | grep -q "AC Power"; then
+        echo "WARNING: firing on BATTERY. caffeinate cannot prevent clamshell sleep."
+        echo "         Keep the lid OPEN or plug in, or this run will stall mid-fire."
+    fi
+    exec caffeinate -ims python3 tools/scripts/run_fire.py "$SLUG" "$@"
+fi
 exec python3 tools/scripts/run_fire.py "$SLUG" "$@"

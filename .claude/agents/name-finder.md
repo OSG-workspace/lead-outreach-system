@@ -63,7 +63,69 @@ SitePages           readable text from the about/team/contact pages ALREADY scra
 handed to you precisely so you do NOT re-fetch the web. Only WebSearch / WebFetch
 for what they do not already contain.
 
+<!-- OPTIONAL:offline -->
+## OFFLINE PASS — applies ONLY when your dispatch prompt contains the line `Mode: offline`
+
+This section is switched on by ONE thing: the short prompt the orchestrator
+gave you (the one naming your input file) contains a line beginning
+`Mode: offline`. If that line is absent, you have the full tool set — skip this
+section entirely, run the Workflow below, and never call your work an
+"offline pass" while `WebSearch` and `WebFetch` are available to you. (This
+file is loaded whole by in-session dispatch; on 2026-09-01, 180 of 248 agents
+that HAD web tools read this section, never searched, and wrote `found:false`.)
+
+When `Mode: offline` IS present: you were dispatched with `Read` and `Write`
+only. `WebSearch` and `WebFetch` do not exist in this pass — do not plan around
+them, do not ask for them, do not apologise for them. Every step below that
+says "search" or "fetch" is simply unavailable to you this time.
+
+Work **exclusively** from your input file. Close the lead only when the material
+already in front of you carries both halves:
+
+- **The person** — named in `SitePages` (an about / team / leadership bio), or
+  readable off a `SitePersonalEmails` address under the step-2d one-name rule
+  (`larry.schultis@…` → Larry Schultis; `nomaan@…` → Nomaan); **and**
+- **Their direct address** — present verbatim in `SitePersonalEmails`, or
+  reconstructable from a person-format address in that list under the ordinary
+  `pattern_inferred` rules.
+
+Every gate of a normal pass still applies here: same evidence bar, same
+`is_direct_email` standard, same `source_url` requirement, same `Mr.`/`Mrs.`
+rule. **Never** guess a name, a gender or an address to force a `found:true` out
+of this pass — a fabricated result is far more expensive than a miss.
+
+If either half is missing, stop at once and write the ordinary `found:false`
+shape (keeping any structured fields you did resolve), with
+`reason: "offline pass: <what was missing>"`. That is the expected outcome for
+roughly half these leads and is **not** a failure — the orchestrator
+re-dispatches exactly those leads with the full web ladder straight afterwards.
+Returning a fast, honest `found:false` is the correct way to hand a hard lead on.
+<!-- /OPTIONAL:offline -->
+
 ## Workflow
+
+**Step 0 — the email-first triage (do this before anything else).** The direct
+email is what actually decides this lead: a perfectly researched person with no
+reachable address is dropped, so name work spent on an unreachable business is
+spent for nothing. Read `SitePersonalEmails`:
+
+- **It lists at least one person-shaped address** → the lead is already
+  reachable. Go to step 1 and work normally. In most of these cases the person
+  is named in `SitePages` or readable straight off the address, and you should
+  finish with **zero** WebSearch/WebFetch calls.
+- **It says `(none found on site)`** → the business publishes no personal
+  mailbox, so before investing in the person, spend **at most two searches** on
+  whether any personal address at this domain exists at all:
+  `"@<domain>" <Business> email` and, if that is empty,
+  `"<domain>" "@<domain>" -site:<domain>`. If neither surfaces a person-shaped
+  address at the domain AND `SitePages` shows no `first.last@`-style pattern to
+  reconstruct from, **stop right there**: write `found:false` with
+  `reason: "no personal-email format observable at <domain>"` and do not walk
+  the rest of the ladder. Do not open `/about`, `/team`, LinkedIn, press pages
+  or registries — no name you find can save a lead with no address. Only if a
+  personal address (or a reconstructable pattern) does exist do you continue to
+  step 1.
+
 1. **Find the person.** If the input has a `TargetRoles` line, that ladder replaces
    the default one below for THIS business — read `SitePages` for one of those
    named titles, else WebSearch `<Business> "<role1>" OR "<role2>" <Country-name>`
@@ -205,6 +267,18 @@ observed format evidence.
 **Not found:**
 ```json
 {"lead_id":"web-northgatefitness-com","found":false,"reason":"name found (Ahmed Al Sayed) but no direct email and no observable email format — only generic info@ available"}
+```
+**Not found, but a decision-maker WAS identified (2026-08-20 addition):** most
+`found:false` results are exactly this shape — you did the work of finding the
+person, only the email failed. Say so with the SAME structured fields
+`found:true` uses (`first_name`, `last_name`, `title`, `role`, `source_url`),
+alongside `found:false` and `reason`. This costs you nothing extra — you already
+have these values — and lets a downstream stage try a different email-recovery
+path (e.g. checking their LinkedIn contact info) without re-researching the
+person from zero. Omit any field you never actually resolved; do not invent one
+to fill it in.
+```json
+{"lead_id":"web-arcotel-castellani-salzburg","found":false,"first_name":"Michael","last_name":"Oberrauch","title":"Mr.","role":"General Manager","source_url":"https://castellani.arcotel.com/en/about","reason":"name found (Michael Oberrauch, General Manager) but no direct personal email — only property-named mailbox (castellani@arcotel.com), no observable person-name-based format to reconstruct from"}
 ```
 
 Field rules:

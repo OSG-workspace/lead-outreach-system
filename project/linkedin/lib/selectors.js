@@ -56,6 +56,22 @@ export const SELECTORS = {
   profileOpenBadge: 'main button[aria-label^="Message"]',
   // "N mutual connections" on the top card.
   profileMutuals: 'main a[href*="facetNetwork"], main span.text-body-small:has-text("mutual")',
+  // --- Contact-info email lookup (lookup_contact_email.js) -----------------
+  // UNVERIFIED (2026-08-20) — added from documented LinkedIn markup, without a
+  // live probe against the real site. Same rule as everywhere else in this
+  // file: if these stop matching, the lookup STOPS and reports it found
+  // nothing rather than guessing. Run tests/tier2/t13-contact-info-probe.test.js
+  // against a real profile (LINKEDIN_TEST_PROFILE) before trusting this at
+  // volume — see that file for exactly what "trusting it" requires.
+  // The top-card link that opens the contact-info overlay.
+  profileContactInfoTrigger: 'a#top-card-text-details-contact-info, a[href*="overlay/contact-info"]',
+  // The overlay is a role=dialog panel LinkedIn opens on top of the profile.
+  contactInfoDialog: 'div[role="dialog"]',
+  // The email row inside it, when the profile owner has made one visible, is a
+  // mailto: link — matching on that survives class-name churn better than any
+  // styling hook would, because it is functional, not cosmetic.
+  contactInfoEmailLink: 'div[role="dialog"] a[href^="mailto:"]',
+  contactInfoCloseButton: 'div[role="dialog"] button[aria-label="Dismiss"]',
   // Education section, for the school hook.
   profileEducation: 'section:has(div#education) li span[aria-hidden="true"]',
   // Recent activity: post cards and their relative timestamps ("2w", "3mo").

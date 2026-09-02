@@ -1,0 +1,111 @@
+{
+  "slug": "dubai-real-estate-brokerage-owners",
+  "name": "Dubai real estate brokerage owners",
+  "description": "Beachhead vertical from the 2026-07-27 GTM research",
+  "industry": "real estate brokerage",
+  "titles": [],
+  "seniority": [
+    "owner"
+  ],
+  "countries": [
+    "AE"
+  ],
+  "cities": [
+    "Dubai",
+    "Sharjah",
+    "Abu Dhabi"
+  ],
+  "keywords": [
+    "real estate",
+    "brokerage",
+    "property",
+    "realty"
+  ],
+  "exclude_titles": [
+    "Agent",
+    "Consultant",
+    "Sales Executive"
+  ],
+  "exclude_keywords": [],
+  "headcount": [],
+  "notes": "Owner-equivalent only. T2 heads-of are employees, not deciders.",
+  "created_at": "2026-09-01T12:15:55Z",
+  "updated_at": "2026-09-02T09:01:37Z",
+  "fired": [
+    {
+      "run_id": "2026-09-01-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T12:16:49Z",
+      "leads": 9
+    },
+    {
+      "run_id": "2026-09-01-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T12:20:28Z",
+      "leads": 0
+    },
+    {
+      "run_id": "2026-09-01-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T12:21:31Z",
+      "leads": 0
+    },
+    {
+      "run_id": "2026-09-01-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T12:22:30Z",
+      "leads": 0
+    },
+    {
+      "run_id": "2026-09-01-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T12:22:55Z",
+      "leads": 0
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:34:45Z",
+      "leads": 167
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:37:08Z",
+      "leads": 171
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:43:14Z",
+      "leads": 500
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:43:45Z",
+      "leads": 681
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:53:27Z",
+      "leads": 681
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:53:28Z",
+      "leads": 681
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:54:18Z",
+      "leads": 681
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:54:43Z",
+      "leads": 681
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-01T22:54:59Z",
+      "leads": 681
+    },
+    {
+      "run_id": "2026-09-02-dubai-real-estate-brokerage-owners",
+      "at": "2026-09-02T09:01:37Z",
+      "leads": 1006
+    }
+  ]
+}

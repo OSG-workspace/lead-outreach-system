@@ -29,6 +29,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agent_dispatch as ad
+from li_url import canonical_profile_url
+from email_utils import COUNTRY_NAMES_ISO
 
 PROJECT = Path(__file__).resolve().parents[2]          # .../project
 SENT_LOG = "vault/lead-outreach/sent-log.md"
@@ -91,6 +93,22 @@ def status(line: str):
 def die(stage: str, msg: str, code: int = 1):
     status(f"ABORTED: {stage} — {msg}")
     print(f"ABORT: {stage} — {msg}", file=sys.stderr)
+    # An aborted run keeps no bulk either (user policy 2026-08-25): raw_html has
+    # no consumer after death — a re-fire always starts a fresh folder, so the
+    # only thing an aborted run's raw_html ever did was accumulate (2.8 GB by
+    # the time this was added). KEEP_RUN_ARTIFACTS=1 still preserves everything.
+    # …except raw_html on a run that already got past extract: the enrichment
+    # prep reads it (SitePages + harvested addresses per lead), so a run
+    # resumed in-session after an enrichment/draft/send abort needs it. On
+    # 2026-09-01-gcc-receptionist the abort's cleanup deleted it, the re-run
+    # prep produced 0/250 leads with site text, and 180 name-finders started
+    # blind. cleanup_stale_runs() still sweeps it after 6h.
+    if STATUS_FILE is not None:
+        try:
+            cleanup_run_artifacts(STATUS_FILE.parent,
+                                  keep_raw=(STATUS_FILE.parent / "leads-extracted.json").exists())
+        except Exception:
+            pass
     sys.exit(code)
 
 
@@ -196,9 +214,9 @@ def resolve_sourcing(run: Path) -> dict:
         for i, s in enumerate(cfg["sources"], 1):
             if not isinstance(s, dict) or not s.get("type"):
                 die("pre-flight", f'sourcing.json sources[{i}] needs a "type"')
-            if s["type"] not in ("map", "directory", "places", "overture"):
+            if s["type"] not in ("map", "directory", "places", "overture", "gmaps"):
                 die("pre-flight", f'sourcing.json sources[{i}] unknown type {s["type"]!r} '
-                                  '(known: "map", "places", "overture", "directory")')
+                                  '(known: "map", "places", "overture", "gmaps", "directory")')
             srcs.append(s)
         cfg["sources"] = srcs
     else:
@@ -272,32 +290,62 @@ def slug_base_of(slug: str) -> str:
 
 
 # Words that carry no company identity, so they must never match a domain.
-def cleanup_run_artifacts(run: Path):
-    """After a successful send+persist, drop the bulky intermediates that have
-    no post-run consumer: raw_html (was 28 GB across 58 old runs) and the
+def cleanup_run_artifacts(run: Path, keep_raw: bool = False):
+    """At the END of every run — success OR abort — drop the bulky intermediates
+    that have no post-run consumer: raw_html (was 28 GB across 58 old runs, and
+    2.8 GB again by 2026-08-25 because aborted/killed runs skipped this) and the
     per-agent batch/out files (hundreds per run). The merged/final artifacts
     (candidates-all, leads-*, emails-*, send logs) are kept for auditability.
-    Set KEEP_RUN_ARTIFACTS=1 to skip (e.g. when debugging a stage)."""
+    Set KEEP_RUN_ARTIFACTS=1 to skip (e.g. when debugging a stage).
+    `keep_raw` (die() on a post-extract abort) spares raw_html only."""
     if PLAN or os.environ.get("KEEP_RUN_ARTIFACTS") == "1":
         return
     import shutil
     removed = 0
     raw = run / "raw_html"
-    if raw.is_dir():
+    if raw.is_dir() and not keep_raw:
         shutil.rmtree(raw, ignore_errors=True)
         removed += 1
+    elif raw.is_dir():
+        print(f"  cleanup [{run.name}]: raw_html KEPT (run aborted after extract; "
+              f"an in-session resume needs it — swept automatically after 6h).")
     for pat in ("candidates-batch-*.txt", "queries-batch-*", "enrich-batch-*.txt",
                 "enrich-out-*.json", "lead-batch-*.txt", "lead-out-*.json",
                 "gap-batch-*.txt", "gap-out-*.json", "wa-batch-*.txt", "wa-out-*.json",
                 # LinkedIn per-agent intermediates. The ranked linkedin-leads.json
                 # and people-*.json stay: the invite drip runs for weeks after the
                 # fire and they are the audit trail for who was queued and why.
-                "li-batch-*.txt", "lif-batch-*.txt"):
+                "li-batch-*.txt", "lif-batch-*.txt", "li-email-batch-*.txt"):
         for f in run.glob(pat):
             f.unlink(missing_ok=True)
             removed += 1
-    print(f"  cleanup: removed raw_html + {removed - 1 if removed else 0} intermediate files "
-          f"(KEEP_RUN_ARTIFACTS=1 to keep).")
+    if removed:
+        print(f"  cleanup [{run.name}]: removed raw_html + {removed - 1} intermediate "
+              f"files (KEEP_RUN_ARTIFACTS=1 to keep).")
+
+
+def cleanup_stale_runs(current: Path):
+    """Sweep the bulk out of PAST runs that died without reaching cleanup —
+    killed mid-fire, machine slept, or pre-policy. Called once per fire, so
+    accumulation is bounded even when a run never exits through die()/DONE
+    (SIGKILL leaves nothing else to hook). A run counts as dead only when its
+    status.txt has been untouched for 6h: a live parallel fire rewrites its
+    status at every stage and agent completion, so a fresh timestamp means
+    hands off (parallel runs are normal and must never lose their raw_html)."""
+    if PLAN or os.environ.get("KEEP_RUN_ARTIFACTS") == "1":
+        return
+    import time
+    now = time.time()
+    for d in sorted((PROJECT / "runs").iterdir()):
+        if not d.is_dir() or d.resolve() == current.resolve():
+            continue
+        st = d / "status.txt"
+        try:
+            mtime = st.stat().st_mtime if st.exists() else d.stat().st_mtime
+        except OSError:
+            continue
+        if now - mtime > 6 * 3600:
+            cleanup_run_artifacts(d)
 
 
 def count_lines(p: Path) -> int:
@@ -349,12 +397,37 @@ def merge_people(run: Path) -> int:
     return len(merged)
 
 
+def _agent_output_path(prompt: str) -> Path | None:
+    """The file this sub-agent was told to write, or None if the prompt names none.
+
+    Every prep stage emits `OutputFile: <abs path>` into its batch
+    (enrich_contact_person, draft_custom, draft_lead_custom,
+    draft_whatsapp_custom, draft_linkedin, resolve_li_profiles). Two prompt
+    shapes carry it: the batch text passed inline, or the path-based dispatch
+    used by name-finder, whose prompt only names the INPUT file so the
+    orchestrator stays lean — there the OutputFile lives one hop away."""
+    m = _re.search(r"^OutputFile:\s*(.+)$", prompt, _re.M)
+    if not m:
+        src = _re.search(r"^Your input file:\s*(.+)$", prompt, _re.M)
+        if not src:
+            return None
+        try:
+            m = _re.search(r"^OutputFile:\s*(.+)$",
+                           Path(src.group(1).strip()).read_text(), _re.M)
+        except OSError:
+            return None
+        if not m:
+            return None
+    return Path(m.group(1).strip())
+
+
 def fan_out(agent: str, prompts: list[str], stage: str, max_workers: int, timeout: int = 420,
-            include: set[str] | None = None):
+            include: set[str] | None = None, tools_override: str | None = None):
     """Dispatch one sub-agent per prompt, in parallel, via headless claude -p.
 
     `include` opts into the agent definition's OPTIONAL blocks; anything not
-    named is stripped from the system prompt (see agent_dispatch.agent_body)."""
+    named is stripped from the system prompt (see agent_dispatch.agent_body).
+    `tools_override` narrows the tool allowlist for this fan-out only."""
     print(f"\n=== {stage}: dispatching {len(prompts)} × {agent} (≤{max_workers} parallel, headless)")
     status(f"{stage} — 0/{len(prompts)} {agent} agents finished (dispatching)")
     if PLAN:
@@ -371,15 +444,57 @@ def fan_out(agent: str, prompts: list[str], stage: str, max_workers: int, timeou
         status(f"{stage} — {done['n']}/{len(prompts)} {agent} agents finished")
 
     res = ad.dispatch_pool(agent, prompts, max_workers=max_workers, timeout=timeout,
-                           cwd=str(ad.REPO), on_done=_cb, include=include)
-    fails = [i for i, (rc, _o, _e) in enumerate(res) if rc != 0]
+                           cwd=str(ad.REPO), on_done=_cb, include=include,
+                           tools_override=tools_override)
+    # A non-zero exit is NOT proof the agent did no work. dispatch_one returns
+    # rc=-1 on a wall-clock timeout, and wall clock includes machine sleep, so a
+    # closed lid fails agents that already finished. Measured on
+    # 2026-08-17-au-trades-1: the gate reported 12/37 name-finders failed while
+    # 34/37 enrich-out files sat on disk — 9 agents had written valid JSON and
+    # were still counted toward the 30% abort. The run was killed on a 3/37 real
+    # failure rate. So an agent counts as failed only if it ALSO left no output.
+    def _failed(results, idxs):
+        out_f, salv = [], 0
+        for i, (rc, _o, _e) in zip(idxs, results):
+            if rc == 0:
+                continue
+            out = _agent_output_path(prompts[i])
+            if out is not None and out.exists() and out.stat().st_size > 0:
+                salv += 1
+                continue
+            out_f.append(i)
+        return out_f, salv
+
+    fails, salvaged = _failed(res, range(len(prompts)))
+    if salvaged:
+        print(f"  {salvaged}/{len(prompts)} {agent} dispatches exited non-zero but WROTE "
+              f"their output — counted as done (timeout/sleep, not lost work).")
+    if fails:
+        # ONE retry before judging the fan-out. The failures that leave no output
+        # are overwhelmingly transient: on 2026-08-31-gcc-receptionist 23/235
+        # tier-2 name-finders died on wall-clock timeouts (17) and
+        # `API Error: Unable to connect to API (ConnectionRefused)` (6) — each
+        # one a lead that never got its web pass.
+        print(f"  retrying {len(fails)}/{len(prompts)} {agent} dispatch(es) that failed "
+              f"without writing output …")
+        status(f"{stage} — retrying {len(fails)} failed {agent} agents")
+        res2 = ad.dispatch_pool(agent, [prompts[i] for i in fails], max_workers=max_workers,
+                                timeout=timeout, cwd=str(ad.REPO), include=include,
+                                tools_override=tools_override)
+        for j, i in enumerate(fails):
+            res[i] = res2[j]
+        fails, _ = _failed(res2, fails)
+        if fails:
+            print(f"  {len(fails)} still failed after retry: "
+                  + "; ".join(f"[{i + 1}] {(res[i][2] or res[i][1]).strip()[-90:]}" for i in fails[:5]))
     if fails:
         # A few sub-agent failures are tolerable (the merge stage drops them),
         # but a large partial fan-out is a DEGRADED run — kill-on-fallback.
         # (2026-06-25-eu-hotels shipped with 24/94 enrich agents completed;
         # that must halt, not send a fraction of the campaign.)
         frac = len(fails) / len(prompts)
-        print(f"  WARNING: {len(fails)}/{len(prompts)} {agent} dispatches returned non-zero.")
+        print(f"  WARNING: {len(fails)}/{len(prompts)} {agent} dispatches returned non-zero "
+              f"AND produced no output file.")
         if frac > 0.3:
             die(stage, f"{len(fails)}/{len(prompts)} {agent} sub-agents failed "
                        f"(>{0.3:.0%} — degraded fan-out, kill-on-fallback).", 2)
@@ -391,7 +506,13 @@ def main():
     ap.add_argument("slug", help="run folder name under runs/ (e.g. 2026-06-23-eu-hotels)")
     ap.add_argument("--dry-run", action="store_true", help="draft only; do NOT send or persist")
     ap.add_argument("--plan", action="store_true", help="trace the stage sequence + config; execute nothing")
-    ap.add_argument("--max-workers", type=int, default=12, help="parallel sub-agent cap")
+    # 12 -> 16 (2026-08-19): the sub-agents are I/O-bound web researchers, and
+    # at 12 workers the 243-agent Stage 5.5 fan-out of 2026-08-18-au-trades ran
+    # 36 minutes (~106s/agent -> the pool, not the agent, was the constraint).
+    # 16 projects ~27 min. Raise further only after watching a run: each worker
+    # is a full headless `claude -p` process, so memory and subscription-side
+    # throttling both scale with this number.
+    ap.add_argument("--max-workers", type=int, default=16, help="parallel sub-agent cap")
     ap.add_argument("--target-leads", type=int, default=0,
                     help="aim the run at OUTREACHING ~N leads: search sourcing dispatches "
                          "agents in adaptive waves until enough qualified leads exist "
@@ -409,6 +530,38 @@ def main():
     global STATUS_FILE
     STATUS_FILE = abs_run / "status.txt"
     status("starting")
+
+    # Nothing a sub-agent never reads may ride along in its context. A CLAUDE.md
+    # in a parent directory of the checkout is auto-discovered by every headless
+    # `claude -p`, so one stray file costs (its size x every dispatch) per fire.
+    # Caught here, before sourcing burns any ledger ground.
+    foreign = [] if os.environ.get("ALLOW_FOREIGN_CLAUDE_MD") else ad.foreign_memory_files()
+    if foreign:
+        listing = "; ".join(f"{p} ({p.stat().st_size // 1024} KB)" for p in foreign)
+        die("pre-flight context hygiene",
+            f"{len(foreign)} CLAUDE.md file(s) above the checkout would be loaded into "
+            f"EVERY sub-agent dispatch: {listing}. They belong to other projects and no "
+            f"stage of this run reads them. Move each into its own project folder "
+            f"(e.g. `mkdir -p <dir>/<project> && mv <dir>/CLAUDE.md <dir>/<project>/`), "
+            f"or set ALLOW_FOREIGN_CLAUDE_MD=1 to fire anyway.")
+
+    # The headless fan-outs are the whole enrichment stage; prove `claude -p`
+    # can reach the model NOW, before Stage 2 spends ledger ground. On
+    # 2026-09-01-gcc-receptionist 247/247 name-finders failed `Not logged in`
+    # after 45 minutes of sourcing + fetch, and the abort retired 238 domains.
+    if not PLAN and os.environ.get("SKIP_HEADLESS_PREFLIGHT") != "1":
+        status("pre-flight — probing headless claude -p")
+        ok, detail = ad.preflight()
+        if not ok:
+            die("pre-flight headless dispatch",
+                f"`claude -p` cannot run a sub-agent: {detail!r}. Every fan-out of "
+                f"this run would fail the same way, after sourcing had spent ledger "
+                f"ground. Fix it first — `claude update` (model support), `claude` "
+                f"then /login (auth), and fire from a plain terminal, not a "
+                f"sandboxed shell — or SKIP_HEADLESS_PREFLIGHT=1 to fire anyway.")
+        print(f"  pre-flight: headless claude -p answered ({detail[:40]!r}).")
+
+    cleanup_stale_runs(abs_run)   # sweep bulk left by runs that died before their own cleanup
 
     # --- Step 1: resolve config (deterministic) ---
     sourcing = resolve_sourcing(run)
@@ -436,6 +589,16 @@ def main():
     # the qualified COMPANIES to people, then DMs a person instead of emailing
     # a mailbox.
     li_on = "linkedin" in channels
+    # "linkedin-email-lookup" is a much smaller opt-in than full LinkedIn
+    # outreach: it never invites or DMs anyone, and spends none of the
+    # invite/DM ramp in linkedin/config/limits.json. It only rescues leads
+    # that died at Stage 5.5 with a real decision-maker name but no email —
+    # li-finder locates their profile (reusing that name, not a fresh search),
+    # then lookup_contact_email.js checks LinkedIn's Contact Info panel for a
+    # personal address. A hit rejoins the ordinary email path. Added
+    # 2026-08-20 after 2026-08-20-eu-hotels: 80 of 99 qualified leads died for
+    # exactly that one reason.
+    li_email_lookup = "linkedin-email-lookup" in channels
     # A LinkedIn-ONLY run never touches a mailbox, so every email-shaped stage
     # (the no-email drop at extract, the email-quality gates at qualify, the
     # decision-maker email enrichment, the email drafter) is skipped rather than
@@ -469,7 +632,8 @@ def main():
         + [_src_verticals(x) for x in sourcing["sources"]
            if x["type"] != "map"]) or "none"
     print(f"slug={a.slug} sourcing=map({src_label}) draft_mode={draft_mode} "
-          f"email={email_on} whatsapp={wa_on} linkedin={li_on} wa_fallback={wa_fallback} "
+          f"email={email_on} whatsapp={wa_on} linkedin={li_on} li_email_lookup={li_email_lookup} "
+          f"wa_fallback={wa_fallback} "
           f"wa_phone_priority={wa_full and wa_fallback} "
           f"combined_custom={combined_custom} dry_run={a.dry_run}")
 
@@ -611,13 +775,18 @@ def main():
             units.append((s, None))
     if not units:
         die("pre-flight", "sourcing.json declares no sources to run")
+    # Equal split by default; a source may carry its own `max_candidates` to
+    # override its share. Overture is the case that needs it: free, no request
+    # ceiling, half its rows domain-carrying — and it obeys the share exactly
+    # (gcc-receptionist 2026-08-31: Riyadh held 1,214 POIs, Overture stopped at
+    # its 40), while gmaps overshoots it by a whole city regardless.
     share = max(1, max_cand // len(units))
     dry_sources: list[str] = []      # sources that reported no fresh ground (rc=8)
 
     for i, (s, t) in enumerate(units, 1):
         if t:
             label_bit = t["vertical"]
-        elif s["type"] in ("places", "overture"):
+        elif s["type"] in ("places", "overture", "gmaps"):
             # one process sweeps all of this source's targets
             label_bit = "-".join(sorted({x.get("vertical", "")
                                          for x in (s.get("targets") or [])})) or s["type"]
@@ -630,7 +799,7 @@ def main():
                    "--selector", t["selector"],
                    "--vertical", t["vertical"],
                    "--batch-prefix", f"{i:02d}-{t['vertical']}",
-                   "--max-candidates", str(share)]
+                   "--max-candidates", str(s.get("max_candidates") or share)]
             if resolve_on:
                 cmd += ["--capture-unresolved"]
             if s.get("region") or sourcing.get("region"):
@@ -643,7 +812,7 @@ def main():
             cmd = [PY, "tools/scripts/source_places.py", "--run-dir", str(run),
                    "--source", json.dumps(s),
                    "--batch-prefix", f"{i:02d}-{label_bit}",
-                   "--max-candidates", str(share)]
+                   "--max-candidates", str(s.get("max_candidates") or share)]
         elif s["type"] == "overture":
             # Bulk open POI data (Overture Maps), queried in place over S3.
             # Same places.txt, same candidate contract — but no request ceiling
@@ -652,11 +821,38 @@ def main():
             cmd = [PY, "tools/scripts/source_overture.py", "--run-dir", str(run),
                    "--source", json.dumps(s),
                    "--batch-prefix", f"{i:02d}-{label_bit}",
-                   "--max-candidates", str(share)]
+                   "--max-candidates", str(s.get("max_candidates") or share)]
+        elif s["type"] == "gmaps":
+            # Google Maps enumerated directly via the gosom scraper binary.
+            # Same places.txt, same candidate contract — but it returns the
+            # business's own website AND its Maps category in ONE pass, so it
+            # skips Stage 2.5 entirely and filters off-ICP rows before they cost
+            # a fetch. Measured 2026-08-18: 95% of rows carry a domain, against
+            # 0% from the Places Pro tier (which requests no website by design)
+            # and ~27% surviving Stage 2.5's serial resolve.
+            cmd = [PY, "tools/scripts/source_gmaps.py", "--run-dir", str(run),
+                   "--source", json.dumps(s),
+                   "--batch-prefix", f"{i:02d}-{label_bit}",
+                   "--max-candidates", str(s.get("max_candidates") or share)]
         else:   # directory: any paginated listing on the open web
             cmd = [PY, "tools/scripts/source_directory.py", "--run-dir", str(run),
                    "--source", json.dumps(s),
                    "--batch-prefix", f"{i:02d}-{label_bit}"]
+        # Record which batch prefix this source owns, BEFORE it runs. Without
+        # this, source attribution is unrecoverable: cleanup_run_artifacts()
+        # deletes candidates-batch-* after a successful send, so on 2026-08-18
+        # the only runs that still carried attribution were the ABORTED ones —
+        # making "which source is worth keeping?" unanswerable from the archive.
+        # This file is not matched by any cleanup pattern, so it survives.
+        try:
+            _pfx = cmd[cmd.index("--batch-prefix") + 1]
+            _smap = run / "source-map.json"
+            _cur = json.loads(_smap.read_text()) if _smap.exists() else {}
+            _cur[_pfx] = {"type": s["type"], "vertical": label_bit}
+            _smap.write_text(json.dumps(_cur, indent=2))
+        except (ValueError, IndexError, OSError):
+            pass    # attribution is diagnostics, never a reason to fail a fire
+
         # rc=8 means "this source has no fresh ground left" — an expected end
         # state, not a fallback. One dry source must not kill a run whose other
         # sources still have ground. If EVERY source is dry the run halts at the
@@ -688,7 +884,46 @@ def main():
     # (search + fetch + name-token proof, no LLM). Unproven domains are DROPPED,
     # never guessed: a wrong domain pitches business A at business B and burns it
     # in the sent-log forever.
-    if resolve_on:
+    #
+    # RUN IT CONCURRENTLY WITH A PRE-FETCH (2026-08-19). The resolver only ever
+    # ADDS candidates (candidates-batch-resolved-*); every domain the gmaps /
+    # overture / map sources delivered is final the moment Stage 2 ends —
+    # measured on 2026-08-19-au-trades that was 551 of the eventual 722, sitting
+    # idle for the resolver's whole runtime. merge and fetch are re-runnable by
+    # design (append_sourced dedupes per run slug; fetch skips files already on
+    # disk — the same properties funnel() already relies on between waves), so
+    # the pre-fetch costs nothing extra: funnel() re-merges afterwards, picks up
+    # the resolved batch, and its fetch pass downloads ONLY the new domains.
+    # Failure semantics are unchanged in both directions: a resolver crash still
+    # kills the run (checked at wait()), and a pre-fetch crash kills the
+    # resolver before dying (kill-on-fallback, no orphaned process).
+    # Logs from the two interleave; each line is still stage-prefixed.
+    if resolve_on and not PLAN:
+        rcmd = [PY, "tools/scripts/resolve_domains.py", "--run-dir", str(run),
+                "--config", json.dumps(sourcing)]
+        print(f"\n=== Stage 2.5 resolve domains (background, overlapped with pre-fetch): "
+              f"{' '.join(rcmd)}")
+        status("Stage 2.5 resolve + Stage 4 pre-fetch — running in parallel")
+        rproc = subprocess.Popen(rcmd, cwd=str(PROJECT))
+        prefetch_ok = False
+        try:
+            sh([PY, "tools/scripts/merge_candidates.py", "--run-dir", str(run),
+                "--sent-log", SENT_LOG], "Stage 3 pre-merge (domain-carrying sources)")
+            if count_lines(run / "candidates-all.txt"):
+                sh(["bash", "tools/scripts/fetch_html.sh", str(run)],
+                   "Stage 4 pre-fetch (parallel with resolve)")
+            else:
+                print("  pre-fetch skipped: 0 domain-carrying candidates yet "
+                      "(everything rides on the resolver).")
+            prefetch_ok = True
+        finally:
+            if not prefetch_ok:
+                rproc.terminate()
+            rrc = rproc.wait()
+        if rrc != 0:
+            die("Stage 2.5 resolve domains", f"command exited {rrc}", rrc)
+        status("Stage 2.5 resolve domains — done")
+    elif resolve_on:
         sh([PY, "tools/scripts/resolve_domains.py", "--run-dir", str(run),
             "--config", json.dumps(sourcing)], "Stage 2.5 resolve domains")
 
@@ -733,15 +968,75 @@ def main():
         sh(prep, "Stage 5.5 enrich prep")
         ebatches = sorted(run.glob("enrich-batch-*.txt"))
         # name-finder reads its own file (validated path-based dispatch) -> orchestrator stays lean
-        nf_prompts = [
-            f"Your input file: {b.resolve()}\n"
-            "Read it, then follow your name-finder instructions and write your JSON to the OutputFile named inside it."
-            for b in ebatches
-        ]
+        def _nf_prompt(b: Path, offline: bool = False) -> str:
+            # `Mode: offline` is the ONLY thing that switches the agent into its
+            # offline section (see name-finder.md). The headless tier 1 says it;
+            # tier 2 and any in-session dispatch do not, so an agent that has
+            # WebSearch never talks itself out of using it.
+            return (f"Your input file: {b.resolve()}\n"
+                    + ("Mode: offline — this pass has Read and Write only; follow "
+                       "the OFFLINE PASS section of your instructions.\n" if offline else "")
+                    + "Read it, then follow your name-finder instructions and write "
+                      "your JSON to the OutputFile named inside it.")
+
+        # TWO-TIER DISPATCH (email-only runs). Measured across two campaigns,
+        # ~55% of the leads that survive this stage are won on an address our OWN
+        # Stage-4 crawler already harvested — 101/177 on 2026-08-26-us-law-firms,
+        # 46/85 on 2026-08-26-au-trades, where the winning email was already the
+        # lead's `to_email`. For those the agent's WebSearch/WebFetch loop only
+        # re-confirms what is inlined in its batch file, and that loop is the
+        # single largest token line item in a fire. So tier 1 gives every lead a
+        # Read+Write-only pass that CANNOT reach the web (enforced by the tool
+        # allowlist, not by the prompt); only the leads it cannot close pay for
+        # the full ladder. Tier 2 rewrites the same enrich-out file, so the merge
+        # stage below is unchanged and sees exactly one result per lead.
+        # A phone run keeps the single full pass — the mobile ladder is web-only.
+        two_tier = bool(ebatches) and not wa_on and not PLAN
+
+        def _resolved_offline(b: Path) -> bool:
+            """Did tier 1 close this lead? Only a name AND an email counts —
+            anything less still has to go to the web."""
+            out = run / f"enrich-out-{b.name.removeprefix('enrich-batch-').removesuffix('.txt')}.json"
+            try:
+                r = json.loads(out.read_text())
+            except (OSError, ValueError):
+                return False
+            if isinstance(r, list):
+                r = r[0] if r else {}
+            return bool(r.get("found")) and bool((r.get("email") or "").strip()) \
+                and bool((r.get("first_name") or "").strip() or (r.get("last_name") or "").strip())
+
+        todo = ebatches
+        if two_tier:
+            fan_out("name-finder", [_nf_prompt(b, offline=True) for b in ebatches],
+                    "Stage 5.5 name-finder tier 1 (offline — no web tools)",
+                    a.max_workers, timeout=180, include={"offline"},
+                    tools_override="Read,Write")
+            todo = [b for b in ebatches if not _resolved_offline(b)]
+            hit = len(ebatches) - len(todo)
+            msg = (f"Stage 5.5 tier 1: {hit}/{len(ebatches)} leads resolved with zero "
+                   f"web calls; {len(todo)} go to the full ladder")
+            print(f"  {msg}")
+            status(msg)
+            # Tier 1 wrote a found:false file for every lead it could not close.
+            # Left in place, a tier-2 agent that times out or hits an API error
+            # is "salvaged" by fan_out's file-exists rule and the merge reads
+            # tier 1's offline verdict as final. Measured on
+            # 2026-08-31-gcc-receptionist: 23/235 tier-2 dispatches died that
+            # way, 65/250 leads reached the merge still saying "offline pass",
+            # and every one was retired to disqualified-log as proven
+            # unreachable without a single web search. Clear them so a tier-2
+            # failure is a failure (and gets the retry).
+            if not PLAN:
+                for b in todo:
+                    (run / f"enrich-out-{b.name.removeprefix('enrich-batch-').removesuffix('.txt')}.json"
+                     ).unlink(missing_ok=True)
         # The phone ladder is half the agent's body and is only reachable when
         # EnrichPhone is on; an email-only run ships the lean prompt.
-        fan_out("name-finder", nf_prompts, "Stage 5.5 name-finder", a.max_workers,
-                include={"phone"} if wa_on else None)
+        if todo:
+            fan_out("name-finder", [_nf_prompt(b) for b in todo],
+                    "Stage 5.5 name-finder" + (" tier 2 (full ladder)" if two_tier else ""),
+                    a.max_workers, include={"phone"} if wa_on else None)
         merge = [PY, "tools/scripts/enrich_contact_person.py", "--phase", "merge",
                  "--run-dir", str(run)]
         # A WhatsApp-ONLY run must always keep phone-reachable leads: requiring a
@@ -751,9 +1046,99 @@ def main():
         if wa_fallback or wa_only:
             merge.append("--wa-fallback")
         sh(merge, "Stage 5.5 enrich merge")
-        if not PLAN and count_lines(run / "leads-with-contact.json") == 0:
+        if not PLAN and count_lines(run / "leads-with-contact.json") == 0 and not li_email_lookup:
             die("Stage 5.5", "0 leads with a resolved decision-maker"
                              + ("" if wa_only else " + direct email"))
+
+        # --- Stage 5.6 (opt-in `linkedin-email-lookup`) ---------------------
+        # Take the leads Stage 5.5 dropped for "name found, no email" and give
+        # each one a li-finder pass (reusing the name, not a fresh search) plus
+        # a LinkedIn Contact Info check. Survivors rejoin leads-with-contact.json
+        # through the exact same direct-email gate as everyone else.
+        if li_email_lookup and email_on and not PLAN:
+            dropped_path = run / "leads-dropped.json"
+            candidates = []
+            if dropped_path.exists():
+                for line in dropped_path.read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    d = json.loads(line)
+                    if d.get("drop_stage") == "no_match" and (d.get("found_first_name") or d.get("found_last_name")):
+                        candidates.append(d)
+            if not candidates:
+                print("  linkedin-email-lookup: no name-found-but-no-email leads to rescue.")
+            else:
+                qpath = run / "leads-qualified.json"
+                epath = qpath if qpath.exists() else (run / "leads-extracted.json")
+                extracted_by_id = {}
+                if epath.exists():
+                    for line in epath.read_text().splitlines():
+                        if line.strip():
+                            l = json.loads(line)
+                            extracted_by_id[l["lead_id"]] = l
+
+                liout = run / "li-email-out"
+                for f in run.glob("li-email-batch-*.txt"):
+                    f.unlink()
+                if liout.exists():
+                    for f in liout.glob("*.json"):
+                        f.unlink()
+                liout.mkdir(exist_ok=True)
+
+                index_to_leadid = {}
+                batches = []
+                for i, d in enumerate(candidates, 1):
+                    lead = extracted_by_id.get(d["lead_id"])
+                    if not lead:
+                        continue
+                    country = COUNTRY_NAMES_ISO.get(lead.get("country_code", ""), lead.get("country_code", ""))
+                    bpath = run / f"li-email-batch-{i:03d}.txt"
+                    bpath.write_text(
+                        f"OutputFile: {(liout / f'{i:03d}.json').resolve()}\n"
+                        f"Company:    {lead.get('name', '')}\n"
+                        f"City:       \n"
+                        f"Country:    {country}\n"
+                        f"Vertical:   {lead.get('vertical', '')}\n"
+                        f"Website:    {lead.get('website', '')}\n")
+                    index_to_leadid[f"{i:03d}"] = d["lead_id"]
+                    batches.append(bpath)
+
+                if not batches:
+                    print("  linkedin-email-lookup: candidates had no matching extracted-lead record; skipping.")
+                else:
+                    prompts = [f"Your input file: {b.resolve()}\n"
+                               "Read it, then follow your li-finder instructions and write your JSON "
+                               "to the OutputFile named inside it."
+                               for b in batches]
+                    fan_out("li-finder", prompts, "Stage 5.6 li-finder (email recovery)", a.max_workers)
+
+                    profiles = []
+                    for f in sorted(liout.glob("*.json")):
+                        try:
+                            r = json.loads(f.read_text())
+                        except Exception:
+                            continue
+                        lead_id = index_to_leadid.get(f.stem)
+                        url = canonical_profile_url(r.get("profile_url"))
+                        if lead_id and r.get("found") and url:
+                            profiles.append({"lead_id": lead_id, "url": url})
+                    print(f"  Stage 5.6 li-finder: {len(profiles)}/{len(batches)} profile(s) resolved")
+
+                    if not profiles:
+                        print("  linkedin-email-lookup: no profiles resolved; nothing to check on LinkedIn.")
+                    else:
+                        li_in = run / "li-email-lookup-in.json"
+                        li_out = run / "li-email-lookup-out.json"
+                        li_in.write_text(json.dumps(profiles))
+                        sh(["node", "linkedin/scripts/lookup_contact_email.js",
+                            "--in", str(li_in), "--out", str(li_out)],
+                           "Stage 5.6 LinkedIn contact-info lookup", tolerate=(10,))
+                        sh([PY, "tools/scripts/enrich_contact_person.py", "--phase", "rescue",
+                            "--run-dir", str(run), "--linkedin-results", str(li_out)],
+                           "Stage 5.6 rescue merge")
+            if count_lines(run / "leads-with-contact.json") == 0:
+                die("Stage 5.5/5.6", "0 leads with a resolved decision-maker + direct email, "
+                                     "even after the LinkedIn Contact Info rescue")
 
         # Step 7 draft
         if wa_only:

@@ -1,0 +1,37 @@
+{
+  "_comment": "Copy to config.json and add keys, OR set the env vars instead — env wins, and keeping keys in the environment means nothing secret lands in this repo. A provider with no key is SKIPPED, never fatal, so the tool runs on any subset of these (including none). With no keys at all, the two free providers (ddgs, openweb) still run.",
+
+  "exa": {
+    "_key_env": "EXA_API_KEY",
+    "results_per_query": 25,
+    "max_titles": 8,
+    "max_geos": 8
+  },
+  "coresignal": {
+    "_key_env": "CORESIGNAL_API_KEY",
+    "_max_collects": "HARD SPEND CEILING. Each collect is one credit; search is free. Set this to the most credits one fire may ever spend.",
+    "max_collects": 100,
+    "assumed_freshness_days": 100,
+    "_endpoints": "Overridable because this vendor has moved its API version more than once. A path change should be a config edit, not a patch.",
+    "search_endpoint": "https://api.coresignal.com/cdapi/v2/employee_multi_source/search/es_dsl",
+    "collect_endpoint": "https://api.coresignal.com/cdapi/v2/employee_multi_source/collect/%s"
+  },
+  "pdl": {
+    "_key_env": "PDL_API_KEY"
+  },
+  "ddgs": {
+    "_comment": "Free multi-engine index via the ddgs library. Needs an interpreter that can import ddgs: set `python` here, or LI_SEARCH_DDGS_PYTHON, or pip3 install ddgs. Falls back to ../project/tools/venv automatically.",
+    "python": "",
+    "backend": "bing,google,yahoo,yandex",
+    "max_queries": 150,
+    "max_results": 30,
+    "pages": 3,
+    "delay_seconds": 1.0,
+    "timeout_seconds": 900
+  },
+  "openweb": {
+    "_comment": "Keyless stdlib fallback: one engine's HTML page. Throttles easily; ddgs is the better free source.",
+    "max_queries": 24,
+    "delay_seconds": 2.0
+  }
+}

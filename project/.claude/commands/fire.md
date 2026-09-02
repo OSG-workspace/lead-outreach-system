@@ -361,6 +361,12 @@ Now **issue the `Agent` tool calls foreground, up to 50 per assistant message** 
 
 Do NOT inline the batch contents and do NOT inline the name-finder instructions — both are read by the agent itself (`.claude/agents/name-finder.md` loads automatically with `subagent_type: name-finder`).
 
+Two things the in-session path must respect (learned on 2026-09-01-gcc-receptionist, 12 sends from 250 qualified):
+
+- **Never put `Mode: offline` in an in-session prompt.** The Agent tool loads name-finder.md whole, offline section included; that section now switches on ONLY when the dispatch prompt says `Mode: offline` (the headless tier 1 does, nothing else should). 180/248 agents that had WebSearch declared themselves offline and never searched before this gate existed.
+- **Never re-run the prep after a cleanup.** The batch files are built from `raw_html/` (SitePages + harvested addresses). `run_fire.py` now keeps `raw_html` when it aborts after extract, and the prep refuses to run without it. If you must, fetch again first (`bash tools/scripts/fetch_html.sh "$RUN"`).
+- The Agent tool shares one web-search budget across the whole session (~200); a 250-lead fan-out exhausts it. Prefer the headless path (`run_fire.py`) for a full Stage 5.5; use the in-session fan-out for a stage you are debugging.
+
 After all agents complete, merge:
 
 ```bash

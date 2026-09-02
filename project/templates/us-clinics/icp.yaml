@@ -1,19 +1,25 @@
-icp_name: US Med Spas / Dental / Specialty Clinics — Inbox & Scheduling Automation
+icp_name: US Med Spa / Dental Groups — Consult-Conversion Agent
 description: >
-  Small US med spas, dental practices, and specialty clinics (PT, chiro,
-  dermatology, fertility, counseling) booking by phone/contact-form and chasing
-  no-shows by hand. Custom gap-based emails (gap-writer). Avoid patient health
-  data (HIPAA). No money talk; keep the David Geha / Automate, automatelb.com link.
+  Multi-location (2-20) US med spas and aesthetic clinics selling high-ticket
+  packages, and mid-size dental groups (5-100 locations). Offer: a
+  consult-conversion / 48-hour nurture agent — only 40-55% of consultations
+  convert to treatment, leads are acquired at $150-350 each, and 30-60% go
+  cold between booking and appointment. Runner-up offer: treatment-cycle
+  reactivation / dental recall. NEVER pitch a generic receptionist/booking
+  agent to multi-location groups (Weave runs 40,000+ locations). HIPAA:
+  offer a BAA up front; never reference specific patient data. Fixed copy
+  per pitch.json. See vault/lead-outreach/targeting/us-clinics-scope.md.
 geography: US
 country_filter: US
 vertical: clinic
+# Precise qualification scope (2025-26 US playbook, corrected 2026-08-26): read before qualifying.
+qualification_scope: vault/lead-outreach/targeting/us-clinics-scope.md  # + us-playbook-2026.md
 scoring: { qualify_threshold: 70, send_threshold: 70 }
-target_person: [owner, practice manager]
-notes: "Watch HIPAA. Never reference specific patient data. modern_booking => skip (gap solved)."
+target_person: [owner, chief operating officer, director of operations]
+notes: "Watch HIPAA. Never reference specific patient data. modern_booking is NOT a dead signal here (qualify.json keep_signals): the offer starts after booking."
 signals:
-  positive: [phone_or_form_booking, no_show_chasing, new_patient_intake_email, no_online_scheduling]
-  negative: [modern_booking]
-draft_mode: custom
+  positive: [multi_location_2_plus, high_ticket_menu_3k_plus, financing_cherry_carecredit, membership_program, paid_social_active, pm_stack_boulevard_zenoti_dentrix, coordinator_job_posting]
+  negative: [single_location_no_front_desk_budget]
+draft_mode: template      # pitch.json fixed copy
 no_emdash: true
-no_money_talk: true
-keep_signature_link: true
+keep_signature_link: true # osgdev.com in every email signature (per pitch.json)

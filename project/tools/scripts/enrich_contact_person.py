@@ -25,6 +25,7 @@ import argparse
 import functools
 import json
 import os
+import re as _re
 import shutil
 import subprocess
 import sys
@@ -41,9 +42,13 @@ try:
     import name_from_email as nfe
 except Exception:
     nfe = None
+try:
+    import smtp_email_probe as smtp_probe
+except Exception:  # missing dnspython or network unavailable — rescue is best-effort
+    smtp_probe = None
 
 p = argparse.ArgumentParser()
-p.add_argument("--phase", required=True, choices=["prep", "merge"])
+p.add_argument("--phase", required=True, choices=["prep", "merge", "rescue"])
 p.add_argument("--run-dir", required=True)
 p.add_argument("--enrich-phone", action="store_true",
                help="resolve a mobile/WhatsApp number per lead (name-finder step 3). "
@@ -59,6 +64,13 @@ p.add_argument("--wa-fallback", action="store_true",
                     "instead of dropping it. Email stays the primary channel; "
                     "this only rescues leads that would otherwise die on the "
                     "email gate. Requires --enrich-phone upstream.")
+p.add_argument("--linkedin-results",
+               help="rescue phase: path to linkedin/scripts/lookup_contact_email.js's "
+                    "output ([{lead_id,url,email_found,email,note}]). For each "
+                    "email_found:true entry whose lead_id died at Stage 5.5 with a "
+                    "name but no email, re-run the SAME direct-email gates "
+                    "phase_merge uses and, if it survives, append it to "
+                    "leads-with-contact.json instead of leaving it dropped.")
 args = p.parse_args()
 
 ROOT = Path(args.run_dir).resolve()
@@ -81,6 +93,237 @@ TARGET_ROLES_FILE = ROOT / "target_roles.txt"
 TARGET_ROLES = TARGET_ROLES_FILE.read_text().strip() if TARGET_ROLES_FILE.exists() else ""
 
 COUNTRY_NAMES = {"AE": "UAE", "SA": "Saudi Arabia", "QA": "Qatar", "BH": "Bahrain", "KW": "Kuwait", "LB": "Lebanon"}
+
+# SMTP rescue (2026-08-20): the MAIL FROM used to probe a lead's own domain when
+# name-finder found a person but no email. Reuses the real, already-deliverable
+# sending identity this pipeline already sends from (send_batch_brevo.py reads
+# the same var) rather than a placeholder address some mail servers would
+# reject outright at the MAIL FROM step. See smtp_email_probe.py.
+if smtp_probe is not None:
+    _env = smtp_probe.load_env(Path(__file__).resolve().parents[2] / ".env")
+    SMTP_MAIL_FROM = _env.get("BREVO_SENDER_EMAIL") or "verify@example.com"
+else:
+    SMTP_MAIL_FROM = "verify@example.com"
+
+# Catch-all construction (enabled 2026-08-20 by user directive). On a catch-all
+# domain SMTP can prove nothing, so the fallback is the company's own observed
+# email convention — see build_from_site_format(). Kept behind an env knob
+# because constructed addresses are the historical bounce risk in this
+# pipeline: set SMTP_RESCUE_CATCHALL=0 to turn it off if Brevo bounces rise.
+CATCHALL_CONSTRUCT = os.environ.get("SMTP_RESCUE_CATCHALL", "1") not in ("0", "false", "no")
+
+
+# --- Prose name recovery (2026-08-20) ---------------------------------------
+# MEASURED, and the reason this exists: across the 80 drops of
+# 2026-08-20-eu-hotels, exactly ONE carried structured first/last-name fields,
+# while 55 more named the person only in the free-text `reason`
+# ("name found (Michael Oberrauch, General Manager) but no direct email…").
+# name-finder.md now asks for the structured fields on a found:false, but that
+# is a PROMPT instruction to a Haiku agent — best-effort compliance, not a
+# guarantee, and every historical run predates it. Keying the SMTP rescue only
+# on the structured fields would therefore have fired it on 1 lead instead of
+# 56. This parser is the deterministic backstop: it reads the name the agent
+# already wrote in prose, so the rescue works regardless of whether the agent
+# filled the structured fields.
+# A name token: capitalized, OR a lowercase nobiliary particle. Without the
+# particle branch "Paul de Römph" stops at "Paul" and the surname is lost —
+# measured against the real 2026-08-20-eu-hotels reasons, which are mostly
+# German/Dutch/Italian/Spanish hotel owners.
+_NAME_PARTICLES = (
+    "de", "del", "della", "di", "da", "dos", "du", "van", "von", "der", "den",
+    "ten", "ter", "op", "la", "le", "el", "bin", "al", "ibn", "y", "e",
+)
+_NAME_TOKEN = (r"(?:[A-ZÀ-Þ][\w''\-\.]+|" + "|".join(_NAME_PARTICLES) + r")")
+# Form 1 — the name inside parentheses: "name found (Michael Oberrauch, GM) …"
+_PROSE_NAME_RE = _re.compile(
+    r"\(\s*([A-ZÀ-Þ][\w''\-\.]+(?:\s+" + _NAME_TOKEN + r"){1,3})\s*[,)]", _re.UNICODE)
+# Form 2 — the name stated inline after a role word, no parentheses at all:
+# "Owner Klaus Frühwirth-Stangl identified via FirmenABC.at …",
+# "owner identified as Josef Grander (confirmed via Firmenbuch)".
+# Worth its own pattern: 8 of the 19 reasons form 1 could not reach are this
+# shape. A wrong guess here is self-correcting — it just fails to verify by
+# SMTP and the lead stays dropped exactly as before, so a slightly permissive
+# pattern costs one probe, never a bad send.
+# NOTE the SCOPED (?i:…) around the role words only. A blanket _re.IGNORECASE
+# here silently disables the [A-ZÀ-Þ] capitalization requirement in the capture
+# group too, so ordinary verbs match as name tokens and the surname comes back
+# as "identified"/"via"/"from" — caught in testing against the real reasons.
+_PROSE_ROLE_NAME_RE = _re.compile(
+    r"(?i:\b(?:owners?|founders?|CEO|managing\s+director|general\s+manager|proprietors?|"
+    r"operators?|decision-makers?|Geschäftsführer(?:in)?)\b"
+    r"(?:\s+(?:identified|found|confirmed))?(?:\s+as)?)\s+"
+    r"([A-ZÀ-Þ][\w''\-\.]+(?:\s+" + _NAME_TOKEN + r"){1,3})",
+    _re.UNICODE)
+# Honorifics/academic titles that precede a real name in DACH sources and must
+# not be mistaken for the first name ("Mag. Luigi von Pasquali", "Dr. Anna Süß").
+_HONORIFICS = {"mag", "dr", "prof", "ing", "dipl", "mba", "herr", "frau",
+               "mr", "mrs", "ms", "miss", "sra", "dott", "ir"}
+# Generational suffixes: "Albert Schwaighofer Jr." must yield Schwaighofer, not "Jr".
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "junior", "senior"}
+# A capture ending in a legal-entity suffix is a COMPANY, not a person
+# ("Knollseisen GmbH"). Reject it so the other pattern gets its turn — for that
+# very lead the role form does hold the real person ("owner Bernhard
+# Knollseisen confirmed via company registry").
+_COMPANY_SUFFIXES = {"gmbh", "ag", "kg", "og", "bv", "nv", "sa", "srl", "spa",
+                     "ltd", "llc", "inc", "plc", "sarl", "sl", "oy", "ab",
+                     "as", "aps", "gmbh.", "e.u.", "eu", "co", "holding",
+                     "group", "hotel", "hotels", "gastronomie"}
+
+
+def _person_name_from_match(raw: str) -> tuple[str, str]:
+    """Normalize one captured name string to (first, last), or ("","") if it
+    does not look like a person."""
+    parts = [p for p in raw.split() if p]
+    while parts and parts[0].rstrip(".").lower() in _HONORIFICS:
+        parts.pop(0)
+    while parts and parts[-1].rstrip(".").lower() in _NAME_SUFFIXES:
+        parts.pop()
+    if len(parts) < 2:
+        return "", ""
+    if parts[-1].rstrip(".").lower() in _COMPANY_SUFFIXES:
+        return "", ""
+    first, last = parts[0], parts[-1].rstrip(".")
+    if last.lower() in _NAME_PARTICLES or len(last) < 2:
+        return first, ""
+    return first, last
+# Phrases that mean "no individual was actually identified" — never mine a name
+# out of a reason that says the search FAILED (e.g. "Business operator
+# identified as Familie Schmidhofer, but no individual person's name found").
+# WORD-BOUNDARY matched, deliberately: a plain substring test for "no person"
+# also fires on "no persONAL email", which is the single most common phrasing
+# in these reasons — it silently suppressed ~14 recoverable names (Uwe Schramm,
+# Christoph Ursprunger, Christine Loitfelder …) before this was caught.
+_NO_PERSON_RE = _re.compile(
+    r"\bno\s+(?:individual|named\s+(?:decision-maker|person)|person\b|"
+    r"decision-maker\s+found|name\s+found)", _re.IGNORECASE)
+
+
+def recover_name_from_reason(reason: str) -> tuple[str, str]:
+    """Best-effort (first, last) from a name-finder `reason` string.
+    Returns ("", "") when no person was actually named. Middle names collapse:
+    "Maria Adelheid Scherer" -> ("Maria", "Scherer"), which is what the
+    salutation contract needs (a first name alone is send-eligible as
+    `Hello <First>,`; no gender required for that form)."""
+    text = (reason or "").strip()
+    if not text:
+        return "", ""
+    if _NO_PERSON_RE.search(text):
+        return "", ""
+    # Try BOTH forms and take the first that normalizes to a real person, so a
+    # company-shaped capture in one form falls through to the other instead of
+    # losing the lead.
+    for pattern in (_PROSE_NAME_RE, _PROSE_ROLE_NAME_RE):
+        for m in pattern.finditer(text):
+            first, last = _person_name_from_match(m.group(1))
+            if first:
+                return first, last
+    return "", ""
+
+# --- The direct-email gate (module level: phase_merge AND phase_rescue share it,
+#     one authoritative definition of "what counts as a direct email") ---------
+# Generic mailboxes that must NOT be accepted as the decision-maker's address.
+# Even if the name-finder agent returned one of these, treat it as no-email.
+GENERIC_LOCAL_PARTS = {
+    "info", "contact", "hello", "inquiries", "enquiries", "enquiry",
+    "support", "admin", "office", "general",
+    "careers", "career", "hr", "jobs", "recruit", "recruitment",
+    "marketing", "press", "media", "pr", "comms",
+    "sales", "bookings", "booking", "reservations", "reservation",
+    "appointments", "appointment",
+    "frontdesk", "reception", "manager", "operations",
+    "banqueting", "catering", "events", "concierge",
+    "no-reply", "noreply", "donotreply",
+    # --- ROLE TITLES AND THEIR ABBREVIATIONS (added 2026-08-06) ---------
+    # The 2026-08-05 eu-hotels retries SENT four of these as "direct"
+    # decision-maker addresses: `hd@` (hotel director), `gm@`,
+    # `director@` and `shop@` at four different properties. The
+    # name-finder's own reject list already covers them in prose; this
+    # deterministic gate is the enforcement point and was thinner than the
+    # prompt, so an agent slip shipped straight to Brevo.
+    "gm", "hd", "md", "ceo", "coo", "cfo", "cto", "dir",
+    "director", "directors", "management", "owner", "founder",
+    "boss", "head", "chief", "president", "principal",
+    "shop", "store", "retail", "spa", "wellness", "restaurant", "bar",
+    "kitchen", "housekeeping", "maintenance", "security", "groups",
+    "accounts", "accounting", "finance", "billing", "invoice", "invoices",
+    "webmaster", "web", "it", "helpdesk", "mail", "email", "post",
+    "stay", "welcome", "hotel", "team", "service", "services", "customer",
+    "customerservice", "guest", "guests", "front", "desk", "meetings",
+    # --- NON-ENGLISH ROLE WORDS ----------------------------------------
+    # This is a 31-country EU campaign; an English-only list is a hole the
+    # size of the audience. DE / FR / IT / ES / CZ / SK / PL / NL / HU.
+    "direktion", "direktor", "geschaeftsfuehrung", "empfang", "buchung",
+    "anfrage", "anfragen", "rezeption", "verwaltung",
+    "direction", "accueil", "reservationsfr", "renseignements",
+    "direzione", "prenotazioni", "ufficio", "informazioni", "ricevimento",
+    "direccion", "reservas", "gerencia", "gerente", "recepcion",
+    "recepce", "rezervace", "vedeni", "kancelar",
+    "recepcja", "rezerwacje", "biuro",
+    "receptie", "reserveringen", "kantoor",
+    "igazgato", "recepcio", "foglalas", "iroda",
+}
+# A role word is still a role word with a qualifier glued on
+# (`hotel.director@`, `gm-malta@`, `front_desk@`, `direktion.basel@`).
+_ROLE_SEPS = str.maketrans({".": " ", "_": " ", "-": " ", "+": " "})
+FREE_MAIL_DOMAINS = {
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+    "icloud.com", "live.com", "msn.com", "aol.com", "proton.me", "protonmail.com",
+}
+
+
+def is_direct_email(addr: str) -> bool:
+    addr = (addr or "").strip().lower()
+    if "@" not in addr:
+        return False
+    local, _, domain = addr.partition("@")
+    if not local or not domain or "." not in domain:
+        return False
+    if local in GENERIC_LOCAL_PARTS:
+        return False
+    # Qualified role addresses: `hotel.director@`, `gm-malta@`, `front_desk@`.
+    # A PERSON's address splits into name parts (`alvaro.ferrandis`), so a
+    # role word in a 2-3 token local is the giveaway. Reject when the FIRST
+    # token is a role word, or when the whole local is role tokens only —
+    # `sarah.jones` and `f.vitek` are untouched by both tests.
+    toks = [t for t in local.translate(_ROLE_SEPS).split() if t]
+    if toks and len(toks) <= 3:
+        if toks[0] in GENERIC_LOCAL_PARTS:
+            return False
+        if all(t in GENERIC_LOCAL_PARTS for t in toks):
+            return False
+    if domain in FREE_MAIL_DOMAINS:
+        return False
+    return True
+
+
+def looks_like_business_name(last_name: str, business: str) -> bool:
+    """True if last_name appears to actually be a fragment of the business
+    name (e.g. last_name="Ferrari" while business="Ferrari Dental Clinic").
+    We do NOT drop family-business cases where the surname is genuinely
+    a family name visible on the business name — we drop only when the
+    first significant business-name word equals the last_name AND we have
+    no other signal. To stay conservative this only fires when the FIRST
+    token of the business equals last_name case-insensitively and the
+    business name contains a generic descriptor like Clinic / Hospital /
+    Group / Real Estate / Restaurant / Salon / Pharmacy / Center."""
+    if not last_name or not business:
+        return False
+    bn = business.strip()
+    ln = last_name.strip().lower()
+    if not ln:
+        return False
+    first_token = bn.split()[0].lower() if bn.split() else ""
+    if first_token != ln:
+        return False
+    descriptors = (
+        "clinic", "clinics", "hospital", "polyclinic", "center", "centre",
+        "group", "holding", "real estate", "properties", "restaurant",
+        "cafe", "salon", "spa", "pharmacy", "dental", "medical", "law",
+        "associates", "partners", "insurance", "studio", "academy",
+        "hotel", "resort", "motors", "automotive", "lab", "laboratory",
+    )
+    bn_lower = bn.lower()
+    return any(d in bn_lower for d in descriptors)
 
 
 def load_leads() -> list[dict]:
@@ -105,6 +348,18 @@ def phase_prep() -> None:
         f.unlink()
 
     raw_dir = ROOT / "raw_html"
+    # Every batch file is built from raw_html (harvested addresses + about/team/
+    # contact text). Without it the agents start blind: on
+    # 2026-09-01-gcc-receptionist a prep re-run after the abort's cleanup gave
+    # 0/250 leads any site text (the previous fire: 65/250 with harvested
+    # person addresses) and the survival rate fell from 26% to 5%. Refuse to
+    # write 250 empty batches silently.
+    if not any(raw_dir.glob("*.html")) and os.environ.get("ALLOW_NO_RAW_HTML") != "1":
+        raise SystemExit(
+            f"ABORT: Stage 5.5 prep: {raw_dir} is missing or holds no pages, so every "
+            f"enrich batch would carry no SitePages and no harvested addresses. "
+            f"Re-run Stage 4 (bash tools/scripts/fetch_html.sh {ROOT}) first, or set "
+            f"ALLOW_NO_RAW_HTML=1 to dispatch blind on purpose.")
     with_personal = 0
     with_pages = 0
     # DERIVE_FIRST (user directive, re-affirmed 2026-07-31): when the site's own
@@ -282,6 +537,85 @@ def _site_has_person_format(domain: str) -> bool:
     return False
 
 
+# --- Catch-all construction from site-observed format (2026-08-20) ----------
+# THE PROBLEM THIS SOLVES, measured: on a 14-domain live sample of the
+# 2026-08-20-eu-hotels drops, 6 (43%) were CATCH-ALL — the mail server accepts
+# every address, so an SMTP probe can prove nothing and those leads die even
+# though the decision-maker's name is known. That was the single largest
+# remaining bucket.
+#
+# THE CONSTRAINT, from this repo's own history: "Constructed addresses were 66%
+# of sends and drove the 21% hard-bounce rate." So construction is allowed ONLY
+# where the business's OWN scraped pages show a real person-format address on
+# the same domain, whose shape tells us the company's convention. That is the
+# same bar name-finder's step 2c applies, made deterministic. NO site evidence
+# -> no construction, the lead stays dropped. This never guesses blind.
+#
+# Turn off with SMTP_RESCUE_CATCHALL=0 if Brevo bounce rate rises.
+_SEPS = (".", "_", "-")
+
+
+@functools.lru_cache(maxsize=None)
+def _site_email_format(domain: str) -> tuple[str, str]:
+    """Infer the company's personal-email convention from addresses harvested
+    off its own site. Returns (template, evidence) or ("", "").
+
+    Templates use the same field names as smtp_email_probe: {first} {last} {f}.
+    Inference is STRUCTURAL — we do not know whose addresses these are, only
+    their shape, which is exactly what the convention is:
+        sarah.jones@ -> "{first}.{last}"      s.jones@ -> "{f}.{last}"
+        sarah@       -> "{first}"             sjones@  -> (ambiguous, skipped)
+    """
+    if harvest_domain is None:
+        return "", ""
+    try:
+        harvested = harvest_domain(domain, ROOT / "raw_html")
+    except Exception:
+        return "", ""
+    for addr in harvested.get("personal", []):
+        local, _, dom = addr.lower().partition("@")
+        # Filter with is_direct_email, NOT the thin GENERIC_HARVEST_LOCALS set.
+        # That set omits "hotel", "welcome", "direktion", "rezeption" and the
+        # rest of the multilingual role vocabulary, so `hotel@dollinger.at`
+        # read as a bare-first-name convention and "proved" a format that does
+        # not exist — construction with no real evidence, which is precisely
+        # the bounce risk this whole path is fenced against. is_direct_email is
+        # the one authoritative definition; use it here too.
+        if dom != domain or not local or not is_direct_email(addr.lower()):
+            continue
+        for sep in _SEPS:
+            if sep in local:
+                head, _, tail = local.partition(sep)
+                if not head or not tail or not head.isalpha() or not tail.isalpha():
+                    continue
+                tpl = ("{f}" + sep + "{last}") if len(head) == 1 else ("{first}" + sep + "{last}")
+                return tpl, addr
+        # No separator: a bare first name is a real convention ("christine@").
+        # A run-together "sjones" is ambiguous between {f}{last} and {first}{last},
+        # so it is deliberately NOT used as evidence.
+        if local.isalpha() and 2 <= len(local) <= 12:
+            return "{first}", addr
+    return "", ""
+
+
+def build_from_site_format(first: str, last: str, domain: str) -> tuple[str, str]:
+    """Construct this person's address in the company's observed convention.
+    Returns (email, evidence_note), or ("", "") when there is no evidence or
+    the name lacks the component the convention needs."""
+    tpl, example = _site_email_format(domain)
+    if not tpl or smtp_probe is None:
+        return "", ""
+    f, l = smtp_probe.clean(first), smtp_probe.clean(last)
+    if "{last}" in tpl and not l:
+        return "", ""
+    if ("{first}" in tpl or "{f}" in tpl) and not f:
+        return "", ""
+    local = tpl.format(first=f, last=l, f=f[:1])
+    if not local:
+        return "", ""
+    return f"{local}@{domain}", f"company email convention observed on its own site ({example})"
+
+
 def phase_merge() -> None:
     """Read enrich-out-*.json, join to leads-extracted.json, drop leads with
     no name+gender, write leads-with-contact.json."""
@@ -329,108 +663,6 @@ def phase_merge() -> None:
             continue
         enriched[lead_id] = data
 
-    # Generic mailboxes that must NOT be accepted as the decision-maker's address.
-    # Even if the name-finder agent returned one of these, treat it as no-email.
-    GENERIC_LOCAL_PARTS = {
-        "info", "contact", "hello", "inquiries", "enquiries", "enquiry",
-        "support", "admin", "office", "general",
-        "careers", "career", "hr", "jobs", "recruit", "recruitment",
-        "marketing", "press", "media", "pr", "comms",
-        "sales", "bookings", "booking", "reservations", "reservation",
-        "appointments", "appointment",
-        "frontdesk", "reception", "manager", "operations",
-        "banqueting", "catering", "events", "concierge",
-        "no-reply", "noreply", "donotreply",
-        # --- ROLE TITLES AND THEIR ABBREVIATIONS (added 2026-08-06) ---------
-        # The 2026-08-05 eu-hotels retries SENT four of these as "direct"
-        # decision-maker addresses: `hd@` (hotel director), `gm@`,
-        # `director@` and `shop@` at four different properties. The
-        # name-finder's own reject list already covers them in prose; this
-        # deterministic gate is the enforcement point and was thinner than the
-        # prompt, so an agent slip shipped straight to Brevo.
-        "gm", "hd", "md", "ceo", "coo", "cfo", "cto", "dir",
-        "director", "directors", "management", "owner", "founder",
-        "boss", "head", "chief", "president", "principal",
-        "shop", "store", "retail", "spa", "wellness", "restaurant", "bar",
-        "kitchen", "housekeeping", "maintenance", "security", "groups",
-        "accounts", "accounting", "finance", "billing", "invoice", "invoices",
-        "webmaster", "web", "it", "helpdesk", "mail", "email", "post",
-        "stay", "welcome", "hotel", "team", "service", "services", "customer",
-        "customerservice", "guest", "guests", "front", "desk", "meetings",
-        # --- NON-ENGLISH ROLE WORDS ----------------------------------------
-        # This is a 31-country EU campaign; an English-only list is a hole the
-        # size of the audience. DE / FR / IT / ES / CZ / SK / PL / NL / HU.
-        "direktion", "direktor", "geschaeftsfuehrung", "empfang", "buchung",
-        "anfrage", "anfragen", "rezeption", "verwaltung",
-        "direction", "accueil", "reservationsfr", "renseignements",
-        "direzione", "prenotazioni", "ufficio", "informazioni", "ricevimento",
-        "direccion", "reservas", "gerencia", "gerente", "recepcion",
-        "recepce", "rezervace", "vedeni", "kancelar",
-        "recepcja", "rezerwacje", "biuro",
-        "receptie", "reserveringen", "kantoor",
-        "igazgato", "recepcio", "foglalas", "iroda",
-    }
-    # A role word is still a role word with a qualifier glued on
-    # (`hotel.director@`, `gm-malta@`, `front_desk@`, `direktion.basel@`).
-    _ROLE_SEPS = str.maketrans({".": " ", "_": " ", "-": " ", "+": " "})
-    FREE_MAIL_DOMAINS = {
-        "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
-        "icloud.com", "live.com", "msn.com", "aol.com", "proton.me", "protonmail.com",
-    }
-
-    def is_direct_email(addr: str) -> bool:
-        addr = (addr or "").strip().lower()
-        if "@" not in addr:
-            return False
-        local, _, domain = addr.partition("@")
-        if not local or not domain or "." not in domain:
-            return False
-        if local in GENERIC_LOCAL_PARTS:
-            return False
-        # Qualified role addresses: `hotel.director@`, `gm-malta@`, `front_desk@`.
-        # A PERSON's address splits into name parts (`alvaro.ferrandis`), so a
-        # role word in a 2-3 token local is the giveaway. Reject when the FIRST
-        # token is a role word, or when the whole local is role tokens only —
-        # `sarah.jones` and `f.vitek` are untouched by both tests.
-        toks = [t for t in local.translate(_ROLE_SEPS).split() if t]
-        if toks and len(toks) <= 3:
-            if toks[0] in GENERIC_LOCAL_PARTS:
-                return False
-            if all(t in GENERIC_LOCAL_PARTS for t in toks):
-                return False
-        if domain in FREE_MAIL_DOMAINS:
-            return False
-        return True
-
-    def looks_like_business_name(last_name: str, business: str) -> bool:
-        """True if last_name appears to actually be a fragment of the business
-        name (e.g. last_name="Ferrari" while business="Ferrari Dental Clinic").
-        We do NOT drop family-business cases where the surname is genuinely
-        a family name visible on the business name — we drop only when the
-        first significant business-name word equals the last_name AND we have
-        no other signal. To stay conservative this only fires when the FIRST
-        token of the business equals last_name case-insensitively and the
-        business name contains a generic descriptor like Clinic / Hospital /
-        Group / Real Estate / Restaurant / Salon / Pharmacy / Center."""
-        if not last_name or not business:
-            return False
-        bn = business.strip()
-        ln = last_name.strip().lower()
-        if not ln:
-            return False
-        first_token = bn.split()[0].lower() if bn.split() else ""
-        if first_token != ln:
-            return False
-        descriptors = (
-            "clinic", "clinics", "hospital", "polyclinic", "center", "centre",
-            "group", "holding", "real estate", "properties", "restaurant",
-            "cafe", "salon", "spa", "pharmacy", "dental", "medical", "law",
-            "associates", "partners", "insurance", "studio", "academy",
-            "hotel", "resort", "motors", "automotive", "lab", "laboratory",
-        )
-        bn_lower = bn.lower()
-        return any(d in bn_lower for d in descriptors)
-
     survivors = []
     dropped = []  # lightweight audit trail — see note above WITH_CONTACT.write_text below
     dropped_no_name = 0
@@ -440,6 +672,9 @@ def phase_merge() -> None:
     dropped_no_evidence_url = 0
     dropped_dead_domain = 0
     wa_fallback_kept = 0
+    smtp_rescued = 0
+    smtp_probed = 0
+    catchall_built = 0
 
     # Domains this stage PROVED cannot be reached: the agent did its research and
     # reported no direct decision-maker email. Retired permanently (see
@@ -454,6 +689,23 @@ def phase_merge() -> None:
     # domain permanently. Everything else (a malformed agent payload, a brand
     # parsed as a surname, missing URL evidence) is a defect in one agent run,
     # not a fact about the lead — those stay retryable.
+    #
+    # REACHABILITY IS NOT A VERDICT ON FIT (2026-08-18). These stages still
+    # record the domain — the evidence is worth keeping — but "we could not find
+    # an address for this owner today" is not permanent proof about the business
+    # the way a dead domain or a too-small hotel is. Left permanent it had become
+    # the single largest cause of bans: 731 of the 1,352 rows in
+    # disqualified-log.txt (54%), against 498 for the only genuinely fit-based
+    # reason. What it discarded is visible in the drop reasons themselves —
+    # "name found (Maria Banti, Founder & Laboratory Director) but no direct
+    # email". So the row is still WRITTEN here, and expiry is enforced on the
+    # READ side: load_disqualified_domains() in merge_candidates.py blocks a
+    # `no-direct-email*` row only for NO_EMAIL_RETRY_DAYS (default 90), while
+    # dead-domain and the fit-based reasons stay permanent.
+    #
+    # Writing it (rather than dropping it) is what keeps the 2026-08-05 churn
+    # from returning: three fires that day each spent ~2h and 208 name-finder
+    # agents on the SAME 208 hotels. Within the window they are still skipped.
     RETIRING_STAGES = {"no_match": "no-direct-email",
                        "no_direct_email": "no-direct-email",
                        "dead_domain": "dead-domain"}
@@ -472,8 +724,10 @@ def phase_merge() -> None:
             "agent_reason": r.get("reason", ""),
             "found_first_name": (r.get("first_name") or "").strip(),
             "found_last_name": (r.get("last_name") or "").strip(),
+            "found_title": (r.get("title") or "").strip(),
             "found_role": (r.get("role") or "").strip(),
             "found_source_url": (r.get("source_url") or "").strip(),
+            "smtp_probe_note": (r.get("smtp_probe_note") or "").strip(),
         })
         # Retire ONLY on a real verdict. An agent that crashed or timed out
         # returns no output at all (result is None) and proved nothing about the
@@ -488,9 +742,73 @@ def phase_merge() -> None:
     for lead in leads:
         result = enriched.get(lead["lead_id"])
         if not result or not result.get("found"):
-            dropped_no_match += 1
-            _record_drop(lead, "no_match", result)
-            continue
+            # SMTP RESCUE (2026-08-20, always on — free, no channel flag, no
+            # browser, no third-party API). name-finder usually finds the
+            # right person and fails only on the email (see name-finder.md's
+            # found:false-with-name addition); before giving up, probe the
+            # LEAD'S OWN domain by SMTP RCPT for the common pattern
+            # candidates. See smtp_email_probe.py for exactly how and its
+            # measured, honest limitations (catch-all domains report
+            # `catch_all`, never a false `verified`). A verified hit still
+            # runs through the SAME is_direct_email()/looks_like_business_name
+            # gates below as any other candidate — an SMTP accept that only
+            # coincidentally matches a role mailbox (e.g. "gm@" by initials)
+            # is still caught and rejected downstream, same as always.
+            r = result or {}
+            first_try = (r.get("first_name") or "").strip()
+            last_try = (r.get("last_name") or "").strip()
+            name_basis = "structured"
+            if not (first_try or last_try):
+                # The agent named the person in prose but left the structured
+                # fields empty — 55 of 80 drops on 2026-08-20-eu-hotels. Mine
+                # the name it already wrote rather than discard the lead.
+                first_try, last_try = recover_name_from_reason(r.get("reason", ""))
+                name_basis = "prose-recovered"
+            domain_try = _lead_domain(lead)
+            rescued = False
+            if (first_try or last_try) and domain_try and smtp_probe is not None:
+                smtp_probed += 1
+                probe = smtp_probe.probe_person(first_try, last_try, domain_try, SMTP_MAIL_FROM)
+                if probe["status"] == "verified":
+                    result = {**r, "found": True,
+                              "first_name": first_try, "last_name": last_try,
+                              "email": probe["email"],
+                              "email_basis": "smtp_verified", "confidence": "medium",
+                              "email_source_url": r.get("source_url", ""),
+                              "email_evidence_note": f"SMTP RCPT accepted by {domain_try}'s "
+                                                      f"own mail server (protocol-level check, "
+                                                      f"not a guess); name {name_basis}"}
+                    smtp_rescued += 1
+                    rescued = True
+                elif probe["status"] == "catch_all" and CATCHALL_CONSTRUCT:
+                    # The mail server accepts EVERY address, so SMTP can prove
+                    # nothing here (43% of a measured 14-domain sample). Fall
+                    # back to the company's OWN observed convention — real,
+                    # citable evidence off its own pages — or leave it dropped.
+                    built, note = build_from_site_format(first_try, last_try, domain_try)
+                    if built:
+                        result = {**r, "found": True,
+                                  "first_name": first_try, "last_name": last_try,
+                                  "email": built,
+                                  "email_basis": "pattern_inferred", "confidence": "medium",
+                                  "email_source_url": r.get("source_url", ""),
+                                  "email_evidence_note": f"{note}; domain is catch-all so SMTP "
+                                                          f"cannot verify individuals; name {name_basis}"}
+                        catchall_built += 1
+                        rescued = True
+                    else:
+                        result = {**r, "smtp_probe_note":
+                                  f"catch-all domain and no personal-email format observable on "
+                                  f"its own site, so nothing citable to construct from; "
+                                  f"name {name_basis} as {first_try} {last_try}".rstrip()}
+                else:
+                    result = {**r, "smtp_probe_note": f"SMTP rescue also failed: {probe['status']} "
+                                                        f"({probe['note']}); name {name_basis} "
+                                                        f"as {first_try} {last_try}".rstrip()}
+            if not rescued:
+                dropped_no_match += 1
+                _record_drop(lead, "no_match", result)
+                continue
         first = (result.get("first_name") or "").strip()
         last = (result.get("last_name") or "").strip()
         title = (result.get("title") or "").strip()
@@ -505,7 +823,30 @@ def phase_merge() -> None:
             continue
         if title not in {"Mr.", "Mrs."}:
             title = ""
-        if last and looks_like_business_name(last, lead.get("name", "")) and result.get("confidence") != "high":
+        # The gate below exists to catch an agent inventing a surname out of the
+        # brand ("Maida Law Firm" -> a fictional "Mr. Maida"). But eponymous
+        # firms are the NORM in law, clinics and trades, so on 2026-08-26-us-law-firms
+        # it killed 13 leads of which 9 were correct founder identifications
+        # (Angelyne Lisinski of Lisinski Law Firm, Brent Gunderson of Gunderson
+        # Law Group, ...) that the agent had already evidenced. The address is the
+        # tiebreaker: a local-part that carries the surname AND something more
+        # (`larry.schultis@`, `lschultis@`) is a person's mailbox, whereas a bare
+        # `maida@maidalawfirm.com` is indistinguishable from a brand mailbox and
+        # still fails the gate.
+        eponym_email_proof = False
+        if last:
+            local = (result.get("email") or "").strip().lower().split("@")[0]
+            local = "".join(ch for ch in local if ch.isalnum())
+            surname = "".join(ch for ch in last.lower() if ch.isalnum())
+            given = "".join(ch for ch in first.lower() if ch.isalnum())
+            # Either component in the local-part proves a person's mailbox, per the
+            # one-name-is-enough contract: `larry.schultis@` / `bgunderson@` carry the
+            # surname plus more, `nomaan@husainlaw.com` carries the first name. A bare
+            # `maida@maidalawfirm.com` carries only the brand and stays dropped.
+            eponym_email_proof = (bool(surname) and surname in local and local != surname) \
+                or (bool(given) and given in local)
+        if (last and looks_like_business_name(last, lead.get("name", ""))
+                and result.get("confidence") != "high" and not eponym_email_proof):
             dropped_business_as_surname += 1
             _record_drop(lead, "business_as_surname", result)
             continue
@@ -625,6 +966,12 @@ def phase_merge() -> None:
         print(f"  email basis: {dict(basis)} "
               f"({verbatim}/{len(survivors)} verbatim, rest inferred — watch Brevo bounces)")
     n_retired = _retire_unreachable(unreachable)
+    if smtp_probed:
+        print(f"  SMTP rescue: {smtp_probed} name-found-no-email lead(s) probed, "
+              f"{smtp_rescued} SMTP-verified"
+              + (f", {catchall_built} built from the site's own observed email format "
+                 f"on catch-all domains" if catchall_built else "")
+              + f" -> {smtp_rescued + catchall_built} rescued")
     print(f"  dropped no-match:                {dropped_no_match}")
     print(f"  dropped name-or-gender-missing:  {dropped_no_name}")
     print(f"  dropped business-name-as-surname: {dropped_business_as_surname}")
@@ -650,6 +997,8 @@ def phase_merge() -> None:
         "derived_survived": n_from_email,
         "agents_saved_by_derivation": n_derived,
         "survived": len(survivors), "email_basis": dict(basis),
+        "smtp_probed": smtp_probed, "smtp_rescued": smtp_rescued,
+        "catchall_built_from_site_format": catchall_built,
         "dropped_no_match": dropped_no_match,
         "dropped_name_or_gender": dropped_no_name,
         "dropped_business_as_surname": dropped_business_as_surname,
@@ -663,6 +1012,111 @@ def phase_merge() -> None:
     if not survivors:
         print("ABORT: Stage 5.5 produced 0 leads with resolved contact + gender.")
         raise SystemExit(7)
+
+
+def phase_rescue() -> None:
+    """Stage 5.6 (opt-in, `linkedin-email-lookup` channel) — a lead that died at
+    Stage 5.5 with a NAME but no email gets one more chance: some decision-makers
+    list a personal email in LinkedIn's Contact Info panel even when their
+    employer's site never publishes one anywhere. linkedin/scripts/
+    lookup_contact_email.js already did the browser work; this phase applies the
+    exact same direct-email gate phase_merge uses (is_direct_email,
+    looks_like_business_name, domain_accepts_mail) so a rescued lead is held to
+    the identical bar, then appends survivors to leads-with-contact.json.
+
+    Added 2026-08-20 after 2026-08-20-eu-hotels: 80 of 99 qualified leads died
+    for exactly one reason — "name found, only a generic mailbox available" —
+    and the name/role had already been paid for by that point.
+    """
+    if not args.linkedin_results:
+        print("Stage 5.6 rescue: no --linkedin-results given, nothing to do.")
+        return
+    results_path = Path(args.linkedin_results)
+    if not results_path.exists():
+        print(f"Stage 5.6 rescue: {results_path} does not exist, nothing to do.")
+        return
+    try:
+        li_results = json.loads(results_path.read_text())
+    except Exception:
+        print(f"Stage 5.6 rescue: {results_path} unreadable, nothing to do.")
+        return
+
+    dropped_path = ROOT / "leads-dropped.json"
+    dropped_by_id = {}
+    if dropped_path.exists():
+        for line in dropped_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            if d.get("drop_stage") == "no_match" and (d.get("found_first_name") or d.get("found_last_name")):
+                dropped_by_id[d["lead_id"]] = d
+
+    leads_by_id = {l["lead_id"]: l for l in load_leads()}
+
+    existing = []
+    if WITH_CONTACT.exists():
+        for line in WITH_CONTACT.read_text().splitlines():
+            if line.strip():
+                existing.append(json.loads(line))
+    used_addrs = {(l.get("contact_email") or "").strip().lower() for l in existing if l.get("contact_email")}
+
+    rescued, dup, no_candidate, gate_failed = 0, 0, 0, 0
+    for r in li_results:
+        if not r.get("email_found"):
+            continue
+        lead_id = r.get("lead_id")
+        drop = dropped_by_id.get(lead_id)
+        lead = leads_by_id.get(lead_id)
+        if not drop or not lead:
+            no_candidate += 1
+            continue
+        email = (r.get("email") or "").strip().lower()
+        if not is_direct_email(email):
+            gate_failed += 1
+            continue
+        if not domain_accepts_mail(email.split("@", 1)[1]):
+            gate_failed += 1
+            continue
+        first = drop.get("found_first_name", "")
+        last = drop.get("found_last_name", "")
+        title = drop.get("found_title", "")
+        if title not in {"Mr.", "Mrs."}:
+            title = ""
+        surname_ok = bool(last) and title in {"Mr.", "Mrs."}
+        if not (surname_ok or first):
+            gate_failed += 1
+            continue
+        if last and looks_like_business_name(last, lead.get("name", "")):
+            gate_failed += 1
+            continue
+        if email in used_addrs:
+            dup += 1
+            continue
+        used_addrs.add(email)
+        existing.append({
+            **lead,
+            "contact_first_name": first,
+            "contact_last_name": last,
+            "contact_title": title,
+            "contact_role": drop.get("found_role", ""),
+            "contact_source_url": drop.get("found_source_url", ""),
+            "contact_email": email,
+            "contact_email_basis": "linkedin_contact_info",
+            "contact_email_source_url": r.get("url", ""),
+            "contact_phone": "",
+            "contact_phone_source_url": "",
+            "contact_channel": "email",
+            "contact_wa_fallback_reason": "",
+            "contact_confidence": "medium",
+        })
+        rescued += 1
+
+    existing.sort(key=lambda l: -l.get("score", 0))
+    WITH_CONTACT.write_text("\n".join(json.dumps(l, ensure_ascii=False) for l in existing) + ("\n" if existing else ""))
+    print(f"Stage 5.6 rescue: {len(li_results)} LinkedIn lookup(s), "
+          f"{rescued} rescued into leads-with-contact.json "
+          f"({dup} duplicate address, {gate_failed} failed the direct-email gate, "
+          f"{no_candidate} had no matching drop record)")
 
 
 def _retire_unreachable(pairs: list[tuple[str, str]]) -> int:
@@ -704,7 +1158,14 @@ def _retire_unreachable(pairs: list[tuple[str, str]]) -> int:
     return added
 
 
-if args.phase == "prep":
-    phase_prep()
-else:
-    phase_merge()
+# Guarded so the module can be IMPORTED (by tests/test_enrich_name_recovery.py,
+# which exercises the prose parser and the direct-email gate) without executing
+# a pipeline phase against the cwd. Invoking the script from the CLI is
+# unchanged — that path always has __name__ == "__main__".
+if __name__ == "__main__":
+    if args.phase == "prep":
+        phase_prep()
+    elif args.phase == "merge":
+        phase_merge()
+    else:
+        phase_rescue()

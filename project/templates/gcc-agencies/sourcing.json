@@ -1,0 +1,48 @@
+{
+  "_comment": "GCC marketing agencies (gcc-agencies), built from the 2026-08-25 qualification research: independent medium / medium-large digital, performance and SEO agencies, Dubai first then Riyadh / Abu Dhabi / Jeddah / Doha. Source order mirrors gcc-outreach: gmaps first (highest measured yield on this stack), then overture (bulk, ~half the rows already carry a domain), then map (OSM office=advertising_agency|marketing), then places. PLACES CAVEAT, verified against Google's live Table A docs 2026-08-25: Nearby Search has NO advertising_agency or marketing_agency includedType — marketing_consultant is the closest honest Table A type, so that source under-covers real agencies and over-returns solo consultants; it is the last-rung backup, and the ICP filtering happens at qualify/enrich time. Precision terms/categories come from the shared presets (gmaps_presets.json / overture_presets.json, key 'marketing') so every future agency campaign inherits them. resolve_domains ON: GCC office POIs are frequently name-only in OSM.",
+  "max_per_run": 360,
+  "resolve_domains": true,
+  "resolve_query": "{name} {city} official website",
+  "resolve_max": 300,
+  "resolve_min_name_tokens": 2,
+  "sources": [
+    {
+      "type": "gmaps",
+      "depth": 10,
+      "concurrency": 4,
+      "require_category_match": true,
+      "targets": [
+        {
+          "vertical": "marketing-gcc-ag"
+        }
+      ]
+    },
+    {
+      "type": "overture",
+      "targets": [
+        {
+          "vertical": "marketing"
+        }
+      ]
+    },
+    {
+      "type": "map",
+      "targets": [
+        {
+          "selector": "\"office\"~\"advertising_agency|marketing\"",
+          "vertical": "marketing"
+        }
+      ]
+    },
+    {
+      "type": "places",
+      "max_requests": 150,
+      "targets": [
+        {
+          "included_type": "marketing_consultant",
+          "vertical": "marketing-gcc-ag"
+        }
+      ]
+    }
+  ]
+}

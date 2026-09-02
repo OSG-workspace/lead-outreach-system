@@ -27,6 +27,7 @@ qualify gate), **edit the fixture in this folder** — not a past run under `run
 | `lb-construction/` | Lebanon construction/engineering/design consultancies (tendering angle) | template | email |
 | `lb-restaurants-hotels/` | Lebanon restaurants, hotels & beach clubs (inbox/DM angle) | template | email |
 | `lb-ngos/` | Lebanon NGOs & international organizations (donor-reporting angle) | template | email |
+| `gcc-agencies/` | GCC independent marketing agencies (digital-employee angle) | template | email |
 
 ## THE general fixture structure (one chain — a new campaign is ONLY a new folder)
 

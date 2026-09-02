@@ -1,19 +1,26 @@
-icp_name: US Property Management — Inbox & Scheduling Automation
+icp_name: US Property Management — Maintenance Triage & Back-Office Agent
 description: >
-  Small US residential property management firms (managing ~50-500 units) with
-  heavy tenant email, showing scheduling, and maintenance-request intake done by
-  hand. Low AI-agency competition. Custom gap-based emails (gap-writer).
-  No money talk; keep the David Geha / Automate, automatelb.com link.
+  Mid-size US THIRD-PARTY property managers (1,000-50,000 units), plus
+  scattered-site / single-family / student-housing portfolios. Offer: a
+  maintenance triage + vendor dispatch + follow-up agent — maintenance
+  coordination consumes ~40% of a property manager's week. Runner-up offer:
+  AP invoice-coding + owner reporting (~$10/invoice manual vs ~$2 automated).
+  NEVER pitch leasing AI / after-hours lead response (EliseAI runs 700+
+  operators; most saturated niche of the four verticals). A deployed AI
+  leasing assistant is a GOOD sign: they buy AI, and leasing is covered.
+  Fixed copy per pitch.json.
+  See vault/lead-outreach/targeting/us-property-scope.md.
 geography: US
 country_filter: US
 vertical: property
+# Precise qualification scope (2025-26 US playbook, corrected 2026-08-26): read before qualifying.
+qualification_scope: vault/lead-outreach/targeting/us-property-scope.md  # + us-playbook-2026.md
 scoring: { qualify_threshold: 70, send_threshold: 70 }
-target_person: [owner, operations lead]
-firm_size: "50-500 units"
+target_person: [owner, chief operating officer, director of property management]
+firm_size: "1,000-50,000 units, third-party / fee management"
 signals:
-  positive: [tenant_email_manual, showing_scheduling_backforth, maintenance_intake_form, shared_inbox_visible]
-  negative: [modern_booking]
-draft_mode: custom
+  positive: [third_party_management_stated, units_1k_to_50k, maintenance_or_ap_job_posting, pm_software_appfolio_yardi_buildium_rentvine, owner_services_page, has_ai_leasing_assistant]
+  negative: [nmhc_top_50_enterprise]
+draft_mode: template      # pitch.json fixed copy
 no_emdash: true
-no_money_talk: true
-keep_signature_link: true
+keep_signature_link: true # osgdev.com in every email signature (per pitch.json)

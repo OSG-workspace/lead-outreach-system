@@ -296,6 +296,9 @@ def sweep_city(key: str, city: str, meta: tuple, target: dict, tier: str,
                budget: Budget, seen_ids: set[str], blocked_domains: set[str],
                blocked_slugs: set[str], start_radius_m: float,
                min_radius_m: float, verbose: bool = True,
+               allow_types: set[str] | None = None,
+               deny_types: set[str] | None = None,
+               type_stats: dict | None = None,
                ) -> tuple[list[str], list[str], int, bool]:
     """Adaptive quadtree sweep of one city for one place type.
 
@@ -331,6 +334,22 @@ def sweep_city(key: str, city: str, meta: tuple, target: dict, tier: str,
                 seen_ids.add(pid)
             name = ((p.get("displayName") or {}).get("text") or "").strip()
             if not name:
+                continue
+            # PRECISION GATE. `places.primaryType` is already in the Pro field
+            # mask — it is requested and billed on every call — and until
+            # 2026-08-18 it was read into the response and then thrown away.
+            # The cost of discarding it is real: an includedTypes:["plumber"]
+            # sweep over Sydney returns `manufacturer` and
+            # `building_materials_store` rows (trade-supply RETAIL, which
+            # au-trades/fit_criteria.txt explicitly excludes). Each one then
+            # costs a Stage 2.5 resolve, a fetch and an extract before dying at
+            # qualify. Filtering here is free.
+            ptype = (p.get("primaryType") or "").strip().lower()
+            if type_stats is not None and ptype:
+                type_stats[ptype] = type_stats.get(ptype, 0) + 1
+            if deny_types and ptype in deny_types:
+                continue
+            if allow_types and ptype and ptype not in allow_types:
                 continue
             domain = _domain_from_url((p.get("websiteUri") or ""))
             if not domain:
@@ -368,6 +387,20 @@ def sweep_city(key: str, city: str, meta: tuple, target: dict, tier: str,
     return lines, unresolved, already, complete
 
 
+def _sourced_block(run_slug: str) -> set:
+    """The sourced-log net, applied ONLY when merge_candidates would apply it.
+
+    merge_candidates.merge() gates this net behind SOURCED_BLOCK (default OFF):
+    being merely sourced proves nothing, so a domain no run ever contacted must
+    stay reachable. A source adapter that blocks it unconditionally is stricter
+    than the chain it feeds — it silently suppresses candidates the merge stage
+    would have kept, and the operator sees only a smaller number."""
+    import os
+    if os.environ.get("SOURCED_BLOCK", "").lower() not in {"on", "1", "yes"}:
+        return set()
+    return _mc.load_sourced_domains(_mc.sourced_log_path(SENT_LOG), run_slug)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -395,6 +428,13 @@ def main() -> None:
     min_radius = float(src.get("min_radius_m", 700))
     max_req = a.max_requests or int(src.get("max_requests", FREE_REQUESTS[tier]))
     sleep_s = float(src.get("sleep", 0.12))
+    # Optional precision gates on the Maps primaryType. Both default to OFF so
+    # this change never silently shrinks an existing fixture's supply — but the
+    # observed distribution is always printed, so an operator can see the
+    # off-ICP rows and write an allowlist from real data rather than a guess.
+    allow_types = {t.strip().lower() for t in (src.get("primary_types") or []) if t.strip()}
+    deny_types = {t.strip().lower() for t in (src.get("exclude_primary_types") or []) if t.strip()}
+    type_stats: dict[str, int] = {}
 
     # --- targets: which Google place types, and the vertical they map to ------
     targets = []
@@ -445,8 +485,9 @@ def main() -> None:
           f"start_radius={int(start_radius)}m min_radius={int(min_radius)}m "
           f"max_requests={max_req}")
 
-    blocked_domains = _mc.load_sent_domains(SENT_LOG) | \
-        _mc.load_sourced_domains(_mc.sourced_log_path(SENT_LOG), run_slug)
+    blocked_domains = (_mc.load_sent_domains(SENT_LOG)
+                       | _mc.load_disqualified_domains(SENT_LOG)
+                       | _sourced_block(run_slug))
     blocked_slugs = _mc.load_sent_slugs(SENT_LOG)
     print(f"Fresh-only cap: {len(blocked_domains)} previously-seen domains excluded at source.")
 
@@ -492,7 +533,9 @@ def main() -> None:
             cities_swept += 1
             lines, unres, already, complete = sweep_city(
                 key, city, places[city], t, tier, budget, seen_ids,
-                blocked_domains, blocked_slugs, start_radius, min_radius)
+                blocked_domains, blocked_slugs, start_radius, min_radius,
+                allow_types=allow_types, deny_types=deny_types,
+                type_stats=type_stats)
             skipped += already
             batch_n += 1
             if lines:
@@ -511,6 +554,19 @@ def main() -> None:
                 ledger_city(vkey, city, run_slug)
             time.sleep(sleep_s)
 
+    if type_stats:
+        top = sorted(type_stats.items(), key=lambda kv: -kv[1])[:12]
+        print("\n  primaryType distribution (the ICP precision dial):")
+        for k, v in top:
+            mark = ""
+            if deny_types and k in deny_types:
+                mark = "  [excluded]"
+            elif allow_types and k not in allow_types:
+                mark = "  [excluded]"
+            print(f"    {v:5d}  {k}{mark}")
+        if not allow_types and not deny_types:
+            print('    (no filter set — add "primary_types": [...] or '
+                  '"exclude_primary_types": [...] to this source to drop off-ICP rows)')
     print(f"\nPlaces sourcing: {total} with a domain + {total_unresolved} name-only "
           f"(Stage 2.5 resolves+proves those) -> {run}")
     print(f"  {budget.report()}")

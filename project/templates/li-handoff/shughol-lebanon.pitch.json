@@ -1,0 +1,6 @@
+{
+  "_comment": "Angle for li-writer on the shughol-lebanon handoff. LinkedIn runs never render a template: these fields tell the writer WHAT we offer so it can write one message per person around that person's own snippet and role. Edit freely; the audience notes in li-search/audiences/lb-*.json name which message of the brief each tier gets (agencies: white-label capacity + Whish escrow; PR/events: a free pilot scoped to their next event).",
+  "linkedin_angle": "David runs a small Beirut build team that agencies and event houses use as white-label capacity: microsites, RSVP and booking flows, WhatsApp bots, and the outreach automation behind a launch. Payment runs through Whish escrow so the client pays only when the work lands. For PR, events and production owners the offer is a free pilot scoped to their next event; for agency and consultancy owners it is overflow capacity they can resell under their own name.",
+  "proof_link": "osgdev.com",
+  "linkedin_cta": "Ask whether they have an event or a client project in the next month where a scoped pilot would be worth ten minutes on a call."
+}

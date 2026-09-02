@@ -37,12 +37,30 @@ PER-BRANCH CONFIG (sourcing.json — every knob optional, all have defaults):
   "resolve_max": 400                 cap on names resolved per run
   "resolve_min_name_tokens": 2       tokens that must match on the page
   "resolve_blocklist": ["extra.com"] additional never-accept hosts
+  "resolve_workers": 8               parallel resolver threads (env RESOLVE_WORKERS wins)
+
+PARALLEL (2026-08-19). This stage was the pipeline's #1 wall-clock cost once the
+fetch stage was fixed: strictly serial, one row at a time — a search, up to 3
+verification fetches EACH with a 12s timeout, then an unconditional sleep(2).
+Measured on 2026-08-19-au-trades: 602 names -> 70 minutes -> 171 domains (~7s a
+row). And the work is 94% non-redundant (161/171 resolved domains were found by
+NO other source that run), so the stage cannot be cut — only made concurrent.
+Now a ThreadPoolExecutor runs `resolve_workers` rows at once, each worker with
+its own DDGS session and a jittered pause between rows. Rate-limit errors
+trigger a SHARED exponential backoff (all workers pause together, the row
+retries once) so a throttled backend degrades to slower, never to wrong or
+silently empty. Verification is byte-identical to the serial version — the
+quality bar (fetched page must PROVE identity) is untouched.
 """
 from __future__ import annotations
 import argparse
+import concurrent.futures
 import json
+import os
+import random
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -128,6 +146,43 @@ def verifies(html: str, tokens: list[str], min_tokens: int, domain: str = "") ->
     return any(t in title or t in domain for t in tokens)
 
 
+class Pacer:
+    """Shared politeness + backoff across resolver threads.
+
+    Every worker calls wait() before its search: a jittered pause, plus honoring
+    any global hold. A rate-limited worker calls backoff(); the hold applies to
+    ALL workers, so one throttled backend slows the pool as a unit instead of
+    each thread independently hammering it into a harder block."""
+
+    def __init__(self, base_sleep: float):
+        self._lock = threading.Lock()
+        self._hold_until = 0.0
+        self._penalty = 10.0          # grows 10 -> 20 -> 40 -> 60 (cap)
+        self.base = max(0.4, base_sleep)
+
+    def wait(self) -> None:
+        while True:
+            with self._lock:
+                hold = self._hold_until
+            now = time.monotonic()
+            if now >= hold:
+                break
+            time.sleep(min(hold - now, 2.0))
+        time.sleep(random.uniform(0.3, self.base))
+
+    def backoff(self) -> float:
+        with self._lock:
+            p = self._penalty
+            self._penalty = min(60.0, self._penalty * 2)
+            self._hold_until = max(self._hold_until, time.monotonic() + p)
+        return p
+
+    def ease(self) -> None:
+        """A successful search decays the penalty back toward its floor."""
+        with self._lock:
+            self._penalty = max(10.0, self._penalty * 0.9)
+
+
 def resolve_one(name: str, city: str, country: str, ddgs, cfg: dict,
                 blocked: re.Pattern) -> tuple[str | None, str]:
     """-> (domain, reason). domain is None unless a fetched page PROVES identity."""
@@ -208,17 +263,44 @@ def main() -> None:
         print(f"resolve: WARNING {dropped} name-only businesses were CAPPED OFF by "
               f"resolve_max={cap} and will not be resolved this run. Raise "
               f'"resolve_max" in sourcing.json to reach them.')
-    ddgs = DDGS()
+    workers = int(os.environ.get("RESOLVE_WORKERS",
+                                 str(cfg.get("resolve_workers", 8))))
+    workers = max(1, min(workers, 16))
+    pacer = Pacer(float(cfg.get("resolve_sleep", 1.2)))
+    local = threading.local()
+
+    def _worker(row: tuple[str, str, str, str]) -> tuple[tuple[str, str, str, str], str | None, str]:
+        name, iso, city, vertical = row
+        if not hasattr(local, "ddgs"):
+            local.ddgs = DDGS()       # one session per thread, never shared
+        pacer.wait()
+        dom, why = resolve_one(name, city, iso, local.ddgs, cfg, blocked)
+        if why.startswith("search-error"):
+            # Back the whole pool off and retry this ONE row once. Anything
+            # still failing after that is recorded as the error it is — never
+            # guessed around. A fresh DDGS session for the retry: a throttled
+            # session tends to stay throttled.
+            pacer.backoff()
+            pacer.wait()
+            local.ddgs = DDGS()
+            dom, why = resolve_one(name, city, iso, local.ddgs, cfg, blocked)
+        else:
+            pacer.ease()
+        return row, dom, why
+
+    print(f"resolve: {workers} parallel workers (RESOLVE_WORKERS to override)")
     out, stats, emitted = [], {}, set()
-    for i, (name, iso, city, vertical) in enumerate(rows, 1):
-        dom, why = resolve_one(name, city, iso, ddgs, cfg, blocked)
-        stats[why] = stats.get(why, 0) + 1
-        if dom and dom not in emitted:
-            emitted.add(dom)          # two OSM branches of one business -> one candidate
-            out.append(f"{dom}|{name.replace('|',' ')}|{iso}|{vertical}|0")
-        if i % 25 == 0:
-            print(f"  {i}/{len(rows)} … {len(out)} verified so far")
-        time.sleep(cfg.get("resolve_sleep", 2))
+    done = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        for row, dom, why in ex.map(_worker, rows):
+            name, iso, city, vertical = row
+            done += 1
+            stats[why] = stats.get(why, 0) + 1
+            if dom and dom not in emitted:
+                emitted.add(dom)      # two OSM branches of one business -> one candidate
+                out.append(f"{dom}|{name.replace('|',' ')}|{iso}|{vertical}|0")
+            if done % 25 == 0:
+                print(f"  {done}/{len(rows)} … {len(out)} verified so far")
 
     if out:
         (run / "candidates-batch-resolved-000.txt").write_text("\n".join(out) + "\n")

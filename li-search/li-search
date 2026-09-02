@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Entry point. Deliberately does NOT touch project/tools/venv — this tool is
+# stdlib-only so it cannot inherit the pipeline's dependency problems.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$DIR/run.py" "$@"

@@ -1,0 +1,10 @@
+# GCC marketing agencies — city order = research priority for medium /
+# medium-large independents: Dubai > Riyadh > Abu Dhabi > Jeddah > Doha,
+# with Sharjah + Dammam as the trailing sweep.
+Dubai|AE|25.2048|55.2708|0.25
+Riyadh|SA|24.7136|46.6753|0.25
+Abu Dhabi|AE|24.4539|54.3773|0.20
+Jeddah|SA|21.4858|39.1925|0.20
+Doha|QA|25.2854|51.5310|0.15
+Sharjah|AE|25.3463|55.4209|0.12
+Dammam|SA|26.4207|50.0888|0.15

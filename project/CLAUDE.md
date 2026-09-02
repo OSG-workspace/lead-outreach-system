@@ -100,12 +100,14 @@ must name BOTH "us"/"usa"/"states" (or a US-only vertical word) AND which vertic
 | US + "med spa" / "clinic" / "dental" / "medspa" | `us-clinics` |
 | US + "property" / "property management" | `us-property` |
 | "gcc" / "consumer chain(s)" | `gcc-auto` |
+| "marketing agencies" / "gcc agencies" / "agencies gcc" | `gcc-agencies` |
 | "eu hotel(s)" / "european hotels" / hotels in ES/IT/FR | `eu-hotels` |
 | "lebanese" / "lebanese run" / "biggest lebanese companies" | `lb-enterprise` |
 | "lb receptionist" / "receptionist lebanon" | `lb-receptionist` |
 | bare "lebanon" / "lb" (no other word) | ASK: `lb-enterprise` or `lb-receptionist` |
 | "worldwide" | `worldwide-receptionist` |
 | "linkedin" / "li run" / "fire linkedin" / "gcc linkedin" | `gcc-outreach-li` |
+| "outreach the linkedin run for <brief>" / "message the linkedin leads" | **not a fire** — `./linkedin-run handoff <brief>` (`.claude/commands/li-outreach.md`): li-search's delivered pool → li-writer → the same backlog |
 | "australia" / "australian" / "ai receptionist australia" / AU trades ("aussie plumbers", "australian tradies") | `au-trades` |
 | "fintech" / "money transfer" / "AML" / "bank compliance" (Lebanon) | `lb-fintech-compliance` |
 | "supermarkets" / "food retail" (Lebanon) | `lb-supermarkets` |
@@ -439,6 +441,18 @@ Each run creates a folder under `runs/YYYY-MM-DD-<slug>/` with:
 - `emails-sent.json` — final sent emails with Brevo message IDs
 
 These are gitignored. Aggregate insights are written back to the vault.
+
+**Bulk artifacts are deleted at the end of EVERY run (user policy 2026-08-25).**
+`raw_html/` (fetched website HTML, 50-700 MB per run) and the per-agent
+batch/out intermediates have no consumer after the run ends, and left alone they
+accumulated 3.3 GB. `run_fire.py` now removes them in all three exit paths:
+normal completion, `die()` aborts, and — for runs killed so hard neither fires
+(SIGKILL, machine slept) — a stale sweep at the start of the NEXT fire that
+cleans any run whose `status.txt` is >6h untouched (a live parallel fire
+rewrites its status constantly, so this never touches an in-flight run). The
+small audit artifacts (`candidates-all.txt`, `leads-*.json`, `emails-sent.jsonl`,
+send logs) are always kept. `KEEP_RUN_ARTIFACTS=1` preserves everything for
+debugging a single run.
 
 ## When in doubt
 

@@ -295,6 +295,44 @@ DOMAIN_STRIP_RE = re.compile(r"^(https?://)?(www\.)?")
 AGGREGATOR_DOMAINS = ("booking.com", "expedia.", "tripadvisor.", "hotels.com",
                       "airbnb.", "agoda.", "trivago.", "facebook.com", "instagram.com")
 
+# Hosts that are never a business's OWN domain, applied to every website field a
+# source hands us — Maps' `web_site` above all. Google Maps listings routinely
+# point at a social profile, a link-in-bio page, a menu/booking SaaS tenant or
+# a plain wrong site: on the 2026-08-31 and 2026-09-01 gcc-receptionist fires
+# 16% of QUALIFIED leads carried a domain that could not be the business
+# (flynas.com for a men's salon, google.com and tiktok.com for barbers,
+# qrcodechimp.com for a car rental, 6lb.menu / easymenu.site / taker.io /
+# rekaz.io for restaurants and salons). Each cost a fetch and a name-finder
+# and then retired the WRONG domain to disqualified-log forever. Mirrors
+# resolve_domains.DIRECTORY (which guards the search path) plus the platform
+# hosts that only show up through Maps.
+NOT_OWN_DOMAIN_RE = re.compile(
+    r"^(facebook|fb|instagram|twitter|x|linkedin|youtube|tiktok|pinterest|"
+    r"threads|telegram|snapchat|reddit|whatsapp|google|bing|yandex|apple|"
+    r"wikipedia|tripadvisor|yelp|foursquare|booking|agoda|expedia|airbnb|"
+    r"justdial|yellowpages|saudiayp|eyeofriyadh|sehaguide|daleli|dalilnet|"
+    r"vymaps|near-place|mapcarta|openstreetmap|numbeo|olx|amazon|noon|alibaba|"
+    r"indeed|glassdoor|bayt|altibbi|vezeeta|okadoc|practo|zocdoc|healthgrades|"
+    r"fresha|booksy|treatwell|vagaro|calendly|setmore|simplybook|zenoti|"
+    r"linktr|linktree|heylink|lnk|linkfly|beacons|carrd|taplink|"
+    r"6lb|easymenu|taker|rekaz|qrcodechimp|foodics|talabat|hungerstation|"
+    r"jahez|deliveroo|ubereats|zomato|careem|mrsool|toyou|"
+    r"blogspot|wordpress|wix|wixsite|weebly|godaddysites|squarespace|"
+    r"webflow|notion|canva|behance|t|wa|goo)\.[a-z]{2,}(\.[a-z]{2})?$"
+    r"|\.gov(\.|$)|\.edu(\.|$)", re.I)
+
+
+def _registrable(domain: str) -> str:
+    """`menu.raclette.ae` -> `raclette.ae`, `kokoro.my.taker.io` -> `taker.io`,
+    `clinic.com.sa` -> `clinic.com.sa`. The platform net above is matched on
+    THIS, so a business's own subdomain is never mistaken for a platform and a
+    platform tenant's subdomain never hides the platform."""
+    parts = [p for p in domain.lower().split(".") if p]
+    if len(parts) >= 3 and parts[-2] in {"com", "net", "org", "co", "gov", "edu", "med"} \
+            and len(parts[-1]) == 2:
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:]) if len(parts) >= 2 else domain.lower()
+
 
 def read_run_cfg(run: Path, name: str, default: str) -> str:
     p = run / name
@@ -310,6 +348,8 @@ def _domain_from_url(url: str) -> str | None:
     if not domain or "." not in domain or " " in domain:
         return None
     if any(agg in domain for agg in AGGREGATOR_DOMAINS):
+        return None
+    if NOT_OWN_DOMAIN_RE.search(_registrable(domain)):
         return None
     return domain
 

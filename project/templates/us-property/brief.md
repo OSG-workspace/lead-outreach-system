@@ -1,13 +1,21 @@
-# Brief — US residential property management firms (Inbox & Scheduling Automation)
+# Brief — US property management firms (Maintenance Triage & Back-Office Agent)
 
-**Date:** 2026-06-08  **Status:** SET UP, NOT FIRED.
+**Date:** 2026-08-26 (offer + copy replaced; original 2026-06-08 inbox/scheduling brief retired)
+**Status:** SET UP.
 
-Part of the US inbox/scheduling campaign (one of four verticals). Same chain as
-GCC, US region, source-agent-us, draft_mode=custom (gap-writer per-business
-emails). Decision-maker: owner / operations lead.
+One of four US verticals. Same chain, US region, **draft_mode=template**:
+pitch.json holds the user's exact copy (v2, 2026-08-26) — the maintenance
+triage pitch, which deliberately concedes the leasing side ("your leasing
+side is probably covered"). Decision-maker: owner, COO, or director of
+property management. Target: mid-size THIRD-PARTY managers, 1,000-50,000
+units, plus scattered-site/SFR/student-housing portfolios.
 
-- No money talk in the email. Keep David Geha / Automate, automatelb.com link.
-- Salutation Hello Mr./Mrs. <Surname>,. No em-dashes.
-- References: vault/lead-outreach/targeting/us-inbox-scheduling.md (+ .OVERRIDES.md), voice-us.md
+- **Never pitch leasing AI / after-hours lead response** — EliseAI territory,
+  the most saturated niche of all four verticals. A deployed leasing
+  assistant is a GOOD qualification sign.
+- qualify.json keep_signals: modern_booking is not a dead signal here.
+- Salutation via `{salutation}` per the contract; no em-dashes; osgdev.com in signature.
+- References: vault/lead-outreach/targeting/us-property-scope.md (+ us-playbook-2026.md); pitch.json (fixed copy)
+- Legacy (superseded): vault/lead-outreach/targeting/us-inbox-scheduling.md
 
-To fire: `/fire 2026-06-08-us-property`
+To fire: "fire us property run" → `bash tools/scripts/fire_campaign.sh us-property`

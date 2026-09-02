@@ -1,0 +1,4 @@
+config.json
+cache/**/*.json
+runs/*/
+suppression.txt

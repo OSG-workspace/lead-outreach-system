@@ -1,0 +1,6 @@
+{
+  "_comment": "US med spas / clinics / dental, template mode (user's exact copy v2, 2026-08-26). Fixed copy: consult-conversion / 48-hour nurture pitch. Never pitch a generic receptionist to multi-location groups (Weave runs 40,000+ locations). {salutation} renders 'Mr./Mrs. Surname' or the first name per the salutation contract. No em-dashes. Scope: vault/lead-outreach/targeting/us-clinics-scope.md",
+  "default_vertical": "clinics",
+  "subject_template": "the consults that never convert",
+  "body_template": "Hi {salutation},\n\nYou're likely paying $150-300 to book each consultation, and in most med spas close to half never turn into treatment. The lead goes quiet in the 48 hours between the call and the chair.\n\nWe're 4th-year engineering students at AUB who've built AI agents for marketing agencies, oil & gas companies, hotels, and F&B consultancies. Our agent works exactly that window: it educates the patient, confirms, answers questions, handles financing, and rebooks no-shows instantly.\n\nOpen to a 20-minute Google Meet this week?\n\nBest,\nDavid Geha\nosgdev.com"
+}

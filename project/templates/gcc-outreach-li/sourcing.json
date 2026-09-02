@@ -7,6 +7,21 @@
   "resolve_min_name_tokens": 2,
   "sources": [
     {
+      "type": "gmaps",
+      "_note": "Google Maps enumerated directly via the gosom scraper binary (free, already installed by tools/install.sh). FIRST because it is the highest-yield source measured on this stack: one Wollongong sweep over 5 trade terms returned 124 candidates ALREADY carrying a domain in ~2 minutes, against 111 for the whole 2026-08-17-au-trades-1 run from every other source plus 73 minutes of Stage 2.5. Terms and the category denylist come from tools/scripts/gmaps_presets.json via each target's vertical, so precision is shared by every campaign rather than restated per fixture. TRADEOFF, on purpose: scraping Maps is contrary to Google's ToS, unlike the paid places source. See source_gmaps.py.",
+      "depth": 10,
+      "concurrency": 4,
+      "require_category_match": true,
+      "targets": [
+        {
+          "vertical": "realestate-gcc-li"
+        },
+        {
+          "vertical": "insurance-gcc-li"
+        }
+      ]
+    },
+    {
       "type": "overture",
       "_note": "Overture Maps bulk POI (free, CDLA/Apache, no request ceiling). Added 2026-08-12. Categories come from tools/scripts/overture_presets.json via the target's vertical, so precision is shared by every campaign rather than re-derived per fixture. Listed FIRST because it is the highest-yield free source: ~half its rows already carry the business's own domain, so they enter the chain as candidates without Stage 2.5. See templates/README.md 'Overture sources'.",
       "targets": [

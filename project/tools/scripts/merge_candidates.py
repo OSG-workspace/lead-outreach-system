@@ -22,6 +22,7 @@ Dedup nets applied here (in order):
 """
 from __future__ import annotations
 import argparse
+import json
 import os
 import re
 from datetime import date
@@ -174,11 +175,46 @@ def load_disqualified_domains(sent_log: Path) -> set[str]:
     ledger = sent_log.parent / "disqualified-log.txt"
     if not ledger.exists():
         return set()
+    # Reasons split into two kinds, and only one of them is permanent.
+    #
+    #   FIT verdicts  (hotel-volume-too-low, freemail-only, score<N, dead-domain)
+    #       proof about the business. Blocked forever, unchanged.
+    #
+    #   REACHABILITY  (no-direct-email*)
+    #       proof only about what was findable on ONE day, by one agent. Left
+    #       permanent it became 731 of these 1,352 rows (54%) — businesses whose
+    #       owner WAS identified, discarded for the address alone. So it expires
+    #       after NO_EMAIL_RETRY_DAYS (default 90; set 0 to disable the block
+    #       entirely, or a small number to pull the existing backlog back now).
+    #       Inside the window they are still skipped, which is what stops the
+    #       2026-08-05 churn (three fires, ~2h each, same 208 hotels).
+    try:
+        retry_days = int(os.environ.get("NO_EMAIL_RETRY_DAYS", "90"))
+    except ValueError:
+        retry_days = 90
+    today = date.today()
     out: set[str] = set()
+    expired = 0
     for line in ledger.read_text().splitlines():
         parts = line.strip().split("|")
-        if parts and parts[0].strip():
-            out.add(_norm_domain(parts[0]))
+        if not parts or not parts[0].strip():
+            continue
+        reason = parts[3].strip().lower() if len(parts) > 3 else ""
+        if reason.startswith("no-direct-email"):
+            if retry_days <= 0:
+                expired += 1
+                continue
+            try:
+                age = (today - date.fromisoformat(parts[1])).days
+            except (ValueError, IndexError):
+                age = 0
+            if age >= retry_days:
+                expired += 1
+                continue
+        out.add(_norm_domain(parts[0]))
+    if expired:
+        print(f"Disqualified ledger: {expired} 'no-direct-email' domains are past the "
+              f"{retry_days}-day retry window and are sourceable again.")
     return out
 
 
@@ -258,7 +294,24 @@ def merge(run_dir: Path, sent_log: Path) -> list[str]:
     rows: list[str] = []
     dropped_sent = dropped_sourced = dropped_country = dropped_disqualified = 0
     dropped_country_codes: dict[str, int] = {}
+    # domain -> which source produced it. Written out below as
+    # source-attribution.tsv, which survives cleanup_run_artifacts() and is the
+    # only way to answer "which source is actually worth the time" after a
+    # successful run has had its batch files deleted.
+    try:
+        smap = json.loads((run_dir / "source-map.json").read_text())
+    except Exception:
+        smap = {}
+    origin: dict[str, tuple[str, str]] = {}
     for batch_file in sorted(run_dir.glob("candidates-batch-*.txt")):
+        m = re.match(r"candidates-batch-(.+)-\d+\.txt$", batch_file.name)
+        pfx = m.group(1) if m else batch_file.stem
+        meta = smap.get(pfx) or {}
+        # Stage 2.5 writes its own prefix and has no source-map entry: its rows
+        # are name-only leftovers RESOLVED into domains, which is a distinct
+        # provenance from anything a source emitted directly.
+        stype = meta.get("type") or ("stage2.5-resolve" if pfx.startswith("resolved") else "unknown")
+        svert = meta.get("vertical", "")
         for raw in batch_file.read_text().splitlines():
             line = raw.strip()
             if not line or line.startswith("#"):
@@ -284,9 +337,21 @@ def merge(run_dir: Path, sent_log: Path) -> list[str]:
                 dropped_sourced += 1
                 continue
             seen.add(domain)
+            origin[domain] = (stype, svert)
             rows.append(line)
     # Fake/typo domains die here, before they cost a fetch and vanish at extract.
     rows, dropped_dns = drop_nonexistent(rows)
+    survivors = {_norm_domain(r.split("|")[0]) for r in rows}
+    att = ["domain\tsource\tvertical"]
+    att += [f"{d}\t{origin[d][0]}\t{origin[d][1]}" for d in sorted(survivors) if d in origin]
+    if len(att) > 1:
+        (run_dir / "source-attribution.tsv").write_text("\n".join(att) + "\n")
+        by_src: dict[str, int] = {}
+        for d in survivors:
+            if d in origin:
+                by_src[origin[d][0]] = by_src.get(origin[d][0], 0) + 1
+        print("Source attribution: " + ", ".join(f"{k}={v}" for k, v in sorted(by_src.items(),
+                                                                               key=lambda kv: -kv[1])))
     if dropped_sent or dropped_sourced or dropped_disqualified:
         print(f"Dedup: dropped {dropped_sent} previously-contacted, "
               f"{dropped_disqualified} proven-unqualified, "

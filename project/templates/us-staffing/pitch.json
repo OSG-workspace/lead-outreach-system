@@ -1,0 +1,6 @@
+{
+  "_comment": "US healthcare staffing, template mode (user's exact copy v2, 2026-08-26). Fixed copy: credential-monitoring pitch ($6-8K/month per stuck provider). Never pitch candidate engagement/screening (owned by Paradox/Sense/Bullhorn). {salutation} renders 'Mr./Mrs. Surname' or the first name per the salutation contract. No em-dashes. Scope: vault/lead-outreach/targeting/us-staffing-scope.md",
+  "default_vertical": "staffing agencies",
+  "subject_template": "what one stuck credential costs you",
+  "body_template": "Hi {salutation},\n\nEvery provider stuck in credentialing costs an agency roughly $6-8K a month in lost revenue, and most teams are still chasing licenses and documents by hand.\n\nWe're 4th-year engineering students at AUB who've built AI agents for marketing agencies, oil & gas companies, hotels, and F&B consultancies. Our agent tracks every license and expiry across your contractor pool, chases providers for renewals automatically, and flags anything that could block a placement.\n\nOpen to a 20-minute Google Meet this week to see it live?\n\nBest,\nDavid Geha\nosgdev.com"
+}

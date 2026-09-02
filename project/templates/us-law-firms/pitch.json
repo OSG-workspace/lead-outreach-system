@@ -1,0 +1,32 @@
+{
+  "_comment": "US law firms, template mode (user's exact copy v2, 2026-08-26). TWO fixed templates, never mixed: default = 1A time-capture/billing-leakage for hourly-billing firms; variant 'pi' = 1B medical-records pitch, auto-selected when the firm's scraped pages read as personal-injury/contingency (PI firms do not bill hourly, so 1A to a PI firm marks the sender as uninformed). Variant routing = the `variants` feature in draft_emails.py, keyword match on raw_html. {salutation} renders 'Mr./Mrs. Surname' or the first name per the salutation contract; {name} is the firm. No em-dashes. Scope: vault/lead-outreach/targeting/us-law-firms-scope.md",
+  "default_vertical": "law firms",
+  "subject_template": "the hours {name} never bills",
+  "body_template": "Hi {salutation},\n\nMost firms invoice only around 88% of the work they actually do. Lawyers forget to log the quick calls, the emails, the ten-minute reviews. Over a year, that's real revenue quietly disappearing.\n\nWe're 4th-year engineering students at AUB who've built AI agents for marketing agencies, oil & gas companies, hotels, and F&B consultancies. Our agent reads each lawyer's calendar, email, and documents, reconstructs the unbilled time, and sends it for approval.\n\nOpen to a 20-minute Google Meet this week to see it live?\n\nBest,\nDavid Geha\nosgdev.com",
+  "variants": [
+    {
+      "name": "pi",
+      "_note": "1B: personal-injury firms. Matched on contingency/PI markers in the firm's own pages.",
+      "match_html_any": [
+        "personal injury",
+        "injury law",
+        "injury lawyer",
+        "injury attorney",
+        "accident lawyer",
+        "accident attorney",
+        "car accident",
+        "truck accident",
+        "motorcycle accident",
+        "no win no fee",
+        "no win, no fee",
+        "no fee unless",
+        "contingency fee",
+        "wrongful death",
+        "slip and fall",
+        "catastrophic injury"
+      ],
+      "subject_template": "5,000 pages per case",
+      "body_template": "Hi {salutation},\n\nOne injury case can mean thousands of pages of medical records, and someone at {name} is reading them by hand.\n\nWe're 4th-year engineering students at AUB who've built AI agents for marketing agencies, oil & gas companies, hotels, and F&B consultancies. Our agent turns full medical records into clean chronologies and summaries your team can drop straight into demand packages, in hours instead of weeks.\n\nOpen to a 20-minute Google Meet this week to see it on a sample file?\n\nBest,\nDavid Geha\nosgdev.com"
+    }
+  ]
+}

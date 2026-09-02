@@ -53,6 +53,16 @@ so one fire's backlog of ~60 people takes roughly three to four weeks to drain,
 and only the fraction who accept ever receive a message. Judge this channel on
 replies per week, not per run.
 
+## A third way in: the li-search handoff
+
+`li-search/` (repo root) finds people from web indexes and never touches
+linkedin.com. `./linkedin-run handoff <brief>` takes the accounts it has
+delivered (`li-search/results/<brief>/owners.csv`), skips anyone already in
+`state.json` or `backlog.json`, and runs the same batch → li-writer → merge →
+`linkedin_queue.py` stages a fire runs, so those people land in the same
+backlog and face the same limits. The writer's only first-hand hook is the
+search snippet; a handoff never opens a profile. It queues, it does not send.
+
 ## Daily commands
 
 ```bash

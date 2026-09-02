@@ -82,6 +82,14 @@ def batch(run: Path, pitch: dict) -> int:
             hooks.append(f"recent post: {post}")
         if p.get("company_signal"):
             hooks.append(f"company signal: {p['company_signal']}")
+        # A li-search handoff never opens the profile, so its only first-hand
+        # material is the search-result snippet the index returned. It is real
+        # text from the page — a hook, not a fabrication — and is labelled so
+        # the writer quotes it rather than inventing around it.
+        if p.get("snippet"):
+            hooks.append(f"search snippet (verbatim from their public page): {p['snippet']}")
+        if p.get("profile_location"):
+            hooks.append(f"profile location as shown: {p['profile_location']}")
         payload = (
             f"OutputFile: {(outdir / f'{i:03d}.json').resolve()}\n"
             f"Person: {p.get('full_name')}\n"

@@ -1,8 +1,13 @@
 # Outreach Targeting Config
 
 > Reference file for the cold outreach workflow. Defines WHO to target, WHERE, and HOW.
-> Offer: AI inbox / email / scheduling automation, sold as a monthly retainer.
-> Last updated: 2026-06-08
+> Offer (2026-08-26): credential-monitoring + document-chasing agent for
+> healthcare staffing. FIXED copy: `pitch.json`.
+> **Vertical qualification scope (read before qualifying leads):**
+> `vault/lead-outreach/targeting/us-staffing-scope.md` — regions, sub-segments,
+> signals checklist, tech-stack markers, offer angle for THIS vertical.
+> Cross-vertical context: `vault/lead-outreach/targeting/us-playbook-2026.md`.
+> Last updated: 2026-08-26
 
 ---
 
@@ -22,27 +27,28 @@ Timezone for send times and meeting slots: default to **ET** unless the prospect
 
 ## 2. Target verticals (pick ONE per campaign)
 
-Only target verticals that BOTH reply to cold email AND pay retainers for automation. Ranked best-first for an inbox/scheduling offer:
+Only target verticals that BOTH reply to cold email AND pay for automation. Ranked best-first per the 2026 playbook (whitespace x pain x feasibility x demoability, see us-playbook-2026.md):
 
-| Rank | Vertical | Why | Cold email reply rate | Notes |
-|------|----------|-----|----------------------|-------|
-| 1 | **Law firms** (small) | Highest reply rate of any vertical; very low tech adoption; admin time = pure profit | ~10% | START HERE |
-| 2 | **Staffing / recruiting agencies** | Work IS inbox + scheduling (candidate follow-ups, interview coordination) | 5–8% | |
-| 3 | **Med spas / dental / specialty clinics** | Best retainer attach rate; clear budget | 2–4% | Watch HIPAA on patient data |
-| 4 | **Property management** | Very low AI-agency competition; heavy tenant email + scheduling | — | |
+| Rank | Vertical | The money leak | Agent to pitch |
+|------|----------|----------------|----------------|
+| 1 | **Healthcare staffing** | $6-8K/month lost per provider stuck in credentialing; half of contractors never redeployed | Credential monitoring (+ redeployment) |
+| 2 | **Med spa / dental groups** | Half of high-ticket consults never convert; 48-hour dead zone after booking | Consult-conversion nurture (+ recall) |
+| 3 | **Law firms** | 12-20% of billable revenue never invoiced (hourly firms); 1,000+ page records read by hand (PI) | Time-capture / billing leakage (PI: records) |
+| 4 | **Property management** | 40% of the week on maintenance coordination; ~$10/invoice manual AP | Maintenance triage (+ AP / owner reporting) |
 
 **DO NOT TARGET:** SaaS, tech, software (worst reply rates, saturated inboxes, skeptical buyers). Also avoid financial services.
+**DO NOT PITCH (any vertical):** receptionist / intake / missed calls / leasing AI / candidate engagement. Those front-office niches are saturated for medium/large targets and mark the sender as uninformed, see each scope file's "Do NOT pitch" section.
 
 ---
 
 ## 3. Target person (decision-maker)
 
-Email the person who personally feels the inbox/scheduling pain, not a generic role:
+Email the person who personally feels the vertical's money leak (see the scope file), not a generic role:
 
-- **Law firms:** managing partner OR office/operations manager. Firm size: 2–20 attorneys.
-- **Staffing:** agency owner OR head of recruiting. Firm size: under 50 people.
-- **Med spa / dental:** owner OR practice manager.
-- **Property mgmt:** owner OR operations lead. Firm managing 50–500 units.
+- **Law firms:** managing partner, COO/executive director, or billing manager. 10-200 attorneys hourly-billing (PI records pitch: 5-50 attorneys).
+- **Staffing:** agency owner, COO, or compliance/credentialing lead. $7.5M-$100M revenue, 20-150 internal staff, healthcare niche first.
+- **Med spa / dental:** owner, COO, or director of operations. 2-20 location groups (dental: 5-100 locations).
+- **Property mgmt:** owner, COO, or director of property management. Third-party managers, 1,000-50,000 units.
 
 ---
 
@@ -76,7 +82,7 @@ Do NOT add a contact just because the job title matches. Layer these filters:
 
 **Deliverability (do not skip)**
 - Send from DEDICATED domains, never the main domain. Buy 2–3 secondary domains, warm them ~2 weeks before sending.
-- NO links in the first email (flagged as promotional, hurts deliverability). Links only in follow-ups.
+- NO links in the first email body (flagged as promotional, hurts deliverability). Exception: the user-approved fixed signature link (osgdev.com) in pitch.json. Other links only in follow-ups.
 - A/B test 2–3 subject lines per campaign. Subject 3–7 words, lowercase, no salesy words, no "AI" buzzword.
 
 **Sequence & volume**
@@ -88,7 +94,15 @@ Do NOT add a contact just because the job title matches. Layer these filters:
 
 ## 6. Gap-finding (core step — do this per business before writing)
 
-There is NO template. For each business, research it first, identify the specific repetitive inbox/scheduling task that is being done manually, then write the email around THAT gap and how an AI consultant could fill it. Every email is custom.
+> **2026-08-26: the US campaigns run draft_mode=template.** The email copy is
+> FIXED per `pitch.json` in this folder (us-law-firms auto-routes its PI
+> variant on the firm's own pages). This section applies ONLY if a fully
+> custom run is explicitly requested, and the gap to research is then THIS
+> vertical's money leak as defined in the scope file above (billing leakage /
+> credentialing / consult conversion / maintenance+AP), never the retired
+> inbox/scheduling angle.
+
+For each business, research it first, identify the specific instance of the vertical's gap, then write the email around THAT gap and how an AI agent could fill it.
 
 For each prospect, find and name:
 1. **The gap** — a specific repetitive, manual email/scheduling task this business is doing by hand. Examples of what to look for: client/lead intake emails handled manually, consult or appointment booking done by back-and-forth, follow-up sequences sent one by one, quote/estimate replies, multi-timezone scheduling, reminder/no-show chasing, candidate or patient communication.

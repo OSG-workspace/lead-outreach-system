@@ -1,0 +1,47 @@
+# gcc-agencies — GCC marketing agencies (2026-08-25 qualification research).
+# The chain reads structure from sourcing.json/countries.txt/etc.; this file is
+# the human-readable intent.
+name: gcc-agencies
+channel: email
+draft_mode: template
+countries: [AE, SA, QA]
+
+target:
+  vertical: marketing
+  regions: [United Arab Emirates, Saudi Arabia, Qatar]
+  description: "Independent medium / medium-large marketing agencies (~15-120
+    staff) in the GCC: full-service digital agencies, performance / lead-gen
+    agencies, and SEO / content agencies. City priority per the research:
+    Dubai > Riyadh > Abu Dhabi > Jeddah > Doha."
+  must_be:
+    - independent (NOT a WPP / Publicis / Omnicom / IPG / Dentsu / Accenture Song network shop)
+    - digital, performance, lead-gen, SEO or content focus visible on its own site
+    - active English (or bilingual) web presence
+    - identifiable decision-maker (founder / CEO / MD / head of growth)
+  exclude:
+    - sub-10-person freelancer collectives and solo consultants
+    - holding-network subsidiaries with centralized procurement
+    - PR-only, media-buying-only, events, OOH, printing/signage and pure offline shops
+    - government / semi-government-only client rosters
+
+wedge: "margin pressure + GCC agency talent shortage: one AI digital employee
+  absorbs competitor research, ad creatives, invoices, SEO/GEO and mass
+  outbound, so the agency scales without hiring — and performance agencies can
+  resell the outbound engine to their own clients."
+signals_of_fit:
+  - hiring SDRs / business developers / SEO specialists / content or ad designers
+  - sells lead generation / outbound / appointment-setting to its own clients
+  - multiple service lines matching the product (research, SEO/GEO, paid social, email)
+  - growth signals (new office, GCC expansion, awards, recent client wins)
+disqualify:
+  - no reachable decision-maker email
+notes:
+  - Saudi PDPL + CST anti-spam effectively require prior consent for cold email;
+    UAE PDPL allows legitimate interest. UAE cities lead places.txt for that
+    reason — treat SA volume conservatively.
+  - Sunday-Thursday work week; best sends Tue-Thu late morning; no Ramadan
+    hard-sells (soft touches only, decisions defer to after Eid).
+
+pitch: "one AI digital employee that does market/competitor research, SEO and
+  GEO, image ads, invoices, emails and outreach to thousands of leads a day
+  (full user-approved copy lives in pitch.json)."
