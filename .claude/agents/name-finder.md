@@ -45,6 +45,18 @@ SitePages           readable text from the about/team/contact pages ALREADY scra
 **Use `SitePages`, `SitePersonalEmails` and `SitePhoneLinks` FIRST** — they exist
 so you do NOT re-fetch the web. Search/fetch only for what they lack.
 
+**`KnownDecisionMaker` (when present) — the person is ALREADY IDENTIFIED.** A
+search-grounded research pass ran before you and named them, with
+`KnownRole`, `KnownTitle` and `KnownSourceUrl` as its evidence. Do NOT spend
+searches re-deriving who they are. Copy those values into your output
+(`first_name`, `last_name`, `role`, `source_url`) and put EVERY search you make
+into the one thing it could not resolve: **their direct email address.** Only
+re-open the identity question if `SitePages` actively contradicts it (the named
+person is not connected to this business, or is clearly not the decision-maker) —
+say so in `reason` if you override it. `KnownTitle` may be blank; assign Mr./Mrs.
+yourself if you set a surname. `KnownEmail` is usually empty — that is the gap
+you are here to close.
+
 ## Workflow
 
 **Step 0 — email-first triage.** The direct email decides this lead (a named
@@ -82,9 +94,23 @@ person with no reachable address is dropped), so read `SitePersonalEmails` first
      addresses); WebFetch the bio / press / LinkedIn page; EU/DE/AT/CH → WebFetch
      `/impressum`. **Budget: ~3 well-formed queries.** Once you have a verbatim
      address, stop.
-   - **2c. Discover format, then reconstruct (fallback — real evidence only).**
-     Find any fully-visible person-labeled address at the company
-     (`site:<domain> "@<domain>"`) or a masked one tied to your person (`o**@`).
+   - **2c. Discover the company's FORMAT, then reconstruct (fallback — real
+     evidence only). This is the highest-yield move you have: 25 of the 40
+     addresses closed on 2026-09-04-eu-hotels were built this way, most of them
+     off a published email-format page.** The convention is a fact about the
+     DOMAIN, not about your person, so look for it directly:
+       1. `KnownEmailFormat` in your input file (when present, a previous run
+          already proved this domain's convention — apply it to your name and
+          stop; no search needed).
+       2. **`<Business> email format`** or `rocketreach "<Business>" email
+          format`. Contact-data aggregators publish the convention outright
+          ("[first].[last]@easyhotel.com — 99.5% of employees"). Read the
+          percentage: a dominant format is strong evidence, a near-even split
+          between two formats is NOT.
+       3. A masked address tied to your person (`o**@domain`), or any
+          fully-visible colleague's address (`"@<domain>" -site:<domain>`).
+          Note that a plain `site:<domain>` search usually returns only `info@`
+          and other shared mailboxes, which prove nothing — go wider.
      With a CONSISTENT observed format + the full name, build the address in that
      exact format (`email_basis:"pattern_inferred"`, medium; cite the examples).
      For a mask, reconstruct ONLY if it leaves exactly one plausible answer

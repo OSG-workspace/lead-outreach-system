@@ -189,10 +189,25 @@ def dispatch_one(agent: str, prompt: str, *, timeout: int = 300,
                  include: set[str] | None = None) -> tuple[int, str, str]:
     """Run ONE sub-agent headless. Returns (returncode, stdout, stderr).
     The agent writes its result file itself; stdout is just its terse 'Done:' line."""
+    tools = agent_tools(agent)
+    # --allowedTools takes permission PATTERNS ("Bash(git *)"); --tools takes bare
+    # built-in NAMES. Every agent today lists bare names, but strip any pattern
+    # suffix for --tools so adding a scoped-permission agent later cannot silently
+    # hand the CLI an unparseable tool name.
+    tool_names = ",".join(sorted({t.split("(")[0].strip() for t in tools.split(",") if t.strip()}))
     cmd = [
         "claude", "-p", prompt,
         "--append-system-prompt", agent_body(agent, include),
-        "--allowedTools", agent_tools(agent),
+        # --tools LOADS this exact set; --allowedTools only PERMITS it. Without
+        # --tools the CLI ships the whole built-in roster and defers most of it,
+        # so the agent must spend a ToolSearch round-trip to get WebSearch and
+        # WebFetch back before it can do its job. Measured on 2026-09-02-eu-
+        # hotels-2: 106 of 110 agents made that call (113 in all), and turn-1
+        # context was 37,074 tokens vs 11,924 with --tools — a ~25k delta that
+        # is re-read on EVERY turn (~66M cache-read tokens across a 110-agent
+        # fire). Both flags stay: one sizes the context, the other the sandbox.
+        "--tools", tool_names,
+        "--allowedTools", tools,
         "--model", agent_model(agent),
         "--output-format", "text",
         *session_flags(),
@@ -219,7 +234,7 @@ def preflight(timeout: int = 90) -> tuple[bool, str]:
     Runs with the same session_flags() as a real dispatch, so a flag the
     installed CLI does not accept fails HERE, not 250 times in Stage 5.5."""
     cmd = ["claude", "-p", "Reply with exactly the word OK and nothing else.",
-           "--allowedTools", "", "--max-turns", "1",
+           "--tools", "", "--allowedTools", "", "--max-turns", "1",
            "--model", agent_model("name-finder"), "--output-format", "text",
            *session_flags()]
     try:

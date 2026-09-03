@@ -45,7 +45,7 @@ except Exception:
     nfe = None
 try:
     import smtp_email_probe as smtp_probe
-except Exception:  # missing dnspython or network unavailable — rescue is best-effort
+except (Exception, SystemExit):  # smtp_email_probe sys.exit()s on a missing dnspython — rescue is best-effort
     smtp_probe = None
 
 p = argparse.ArgumentParser()
@@ -386,6 +386,10 @@ def phase_prep() -> None:
     derive_on = (nfe is not None
                  and os.environ.get("DERIVE_NAMES_FROM_EMAIL", "1") != "0")
     derived: list[dict] = []
+    # Conventions proven by earlier fires — replayed into the batch so the agent
+    # applies a known format instead of searching for it again.
+    fmt_ledger = load_format_ledger()
+    n_fmt_hits = 0
     n_batches = 0
     for lead in leads:
         country_name = COUNTRY_NAMES.get(lead["country_code"], lead["country_code"])
@@ -471,6 +475,13 @@ def phase_prep() -> None:
         batch_path = WORK / f"enrich-batch-{nnn}.txt"
         out_path = WORK / f"enrich-out-{nnn}.json"
         target_roles_line = f"TargetRoles: {TARGET_ROLES}\n" if TARGET_ROLES else ""
+        _bare = domain.split("/")[0].removeprefix("www.").lower()
+        _tpl, _url = fmt_ledger.get(_bare, ("", ""))
+        if _tpl:
+            n_fmt_hits += 1
+        fmt_line = (f"KnownEmailFormat: {_tpl}"
+                    + (f"   (proven earlier at {_url})" if _url else "")
+                    + "\n") if _tpl else ""
         batch_path.write_text(
             f"LeadId: {lead['lead_id']}\n"
             f"Business: {lead['name']}\n"
@@ -483,6 +494,7 @@ def phase_prep() -> None:
             f"SitePhoneLinks: {_fmt(phone_links)}\n"
             f"EnrichPhone: {'yes' if args.enrich_phone else 'no'}\n"
             f"{target_roles_line}"
+            f"{fmt_line}"
             f"OutputFile: {out_path}\n"
             f"\n"
             f"SitePages (already-scraped text — READ THIS BEFORE any web fetch):\n"
@@ -500,6 +512,10 @@ def phase_prep() -> None:
         print(f"  name-from-email: {len(derived)}/{len(leads)} decision-makers parsed "
               f"straight off a site address — {len(derived)} agents NOT dispatched "
               f"({dict(how) if how else 'none matched'}).")
+    if fmt_ledger:
+        print(f"  email-format ledger: {n_fmt_hits}/{n_batches} batch(es) carry a convention "
+              f"proven by an earlier fire ({len(fmt_ledger)} domain(s) known) — those agents "
+              f"apply it instead of searching for it.")
     print(f"  {with_personal}/{len(leads)} have >=1 person-format email harvested from the site "
           f"(verbatim candidates / format examples for the name-finder).")
     print(f"  {with_pages}/{len(leads)} have pre-scraped about/team/contact text injected "
@@ -570,6 +586,99 @@ def _site_has_person_format(domain: str) -> bool:
 #
 # Turn off with SMTP_RESCUE_CATCHALL=0 if Brevo bounce rate rises.
 _SEPS = (".", "_", "-")
+
+
+# --- Per-domain email-convention ledger (2026-09-04) -------------------------
+# The convention is a fact about the DOMAIN, not about one lead:
+# {first}.{last}@easyhotel.com holds for every easyHotel lead, in this fire and
+# every future one. Measured on 2026-09-04-eu-hotels: 25 of the 40 addresses the
+# name-finders closed were pattern_inferred, i.e. a convention discovered by
+# search and then applied — and multi-property groups repeat (Louvre Hotels
+# turned up with a stated 89.9% format). Learning it once and replaying it turns
+# that search into a free lookup, and the saving compounds across fires.
+#
+# Format: one "domain<TAB>template<TAB>evidence-url" row, newest wins on read.
+# Templates use smtp_email_probe's field names: {first} {last} {f}.
+FORMAT_LEDGER = Path("vault/lead-outreach/email-formats.txt")
+
+
+def load_format_ledger() -> dict[str, tuple[str, str]]:
+    out: dict[str, tuple[str, str]] = {}
+    try:
+        for line in FORMAT_LEDGER.read_text().splitlines():
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 2 and parts[0] and parts[1]:
+                out[parts[0].strip().lower()] = (parts[1].strip(),
+                                                 parts[2].strip() if len(parts) > 2 else "")
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return out
+
+
+def infer_template(first: str, last: str, local: str) -> str:
+    """Which convention produced this local part? "" when it is not decidable.
+
+    Only STRUCTURAL, name-anchored answers count — the local part must actually
+    be built from the person's name. `artboutique` for Dominik Zurbrügg yields
+    "" rather than a fictional convention, which is the same failure the
+    provider's name-link guard exists to stop."""
+    f = _re.sub(r"[^a-z]", "", _ascii_fold(first))
+    s = _re.sub(r"[^a-z]", "", _ascii_fold(last))
+    l = (local or "").strip().lower()
+    if not l or not (f or s):
+        return ""
+    for sep in (".", "_", "-"):
+        if f and s and l == f + sep + s:
+            return "{first}" + sep + "{last}"
+        if f and s and l == f[0] + sep + s:
+            return "{f}" + sep + "{last}"
+    if f and s and l == f + s:
+        return "{first}{last}"
+    if f and s and l == f[0] + s:
+        return "{f}{last}"
+    if f and l == f:
+        return "{first}"
+    if s and l == s:
+        return "{last}"
+    return ""
+
+
+def _ascii_fold(s: str) -> str:
+    import unicodedata
+    t = (s or "").lower()
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
+        t = t.replace(a, b)
+    return unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
+
+
+def remember_format(domain: str, template: str, evidence_url: str) -> None:
+    """Append a proven convention. Never overwrites: the file is a log and the
+    newest row wins on read, so a domain that changes provider self-corrects.
+
+    A FREEMAIL domain is never learned. gmail.com happens to have produced a
+    clean `{first}.{last}` on this run's data, but "the convention at gmail.com"
+    is a category error: caching it would fabricate an address for every future
+    lead whose owner uses Gmail. Only a domain the business actually controls
+    has a convention."""
+    if not (domain and template):
+        return
+    try:
+        from email_utils import FREEMAIL
+        if domain.lower() in FREEMAIL:
+            return
+    except Exception:
+        if domain.lower() in {"gmail.com", "googlemail.com", "yahoo.com", "hotmail.com",
+                              "outlook.com", "icloud.com", "gmx.net", "gmx.de", "web.de",
+                              "bluewin.ch", "aol.com", "proton.me", "protonmail.com"}:
+            return
+    try:
+        FORMAT_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        with FORMAT_LEDGER.open("a", encoding="utf-8") as fh:
+            fh.write(f"{domain.lower()}\t{template}\t{evidence_url or ''}\n")
+    except Exception:
+        pass                      # a ledger write must never fail a run
 
 
 @functools.lru_cache(maxsize=None)
@@ -692,6 +801,10 @@ def phase_merge() -> None:
     smtp_rescued = 0
     smtp_probed = 0
     catchall_built = 0
+
+    # domain -> (template, evidence url) proven by a lead that cleared every gate
+    # this run; appended to the ledger at the end so the next fire skips the search.
+    learned_formats: dict[str, tuple[str, str]] = {}
 
     # Domains this stage PROVED cannot be reached: the agent did its research and
     # reported no direct decision-maker email. Retired permanently (see
@@ -979,6 +1092,17 @@ def phase_merge() -> None:
                 "contact_wa_fallback_reason": wa_gate,
                 "contact_confidence": result.get("confidence", "low")}
         survivors.append(lead)
+        # Learn this domain's convention from a lead that PASSED every gate, so
+        # the next fire replays it instead of paying to rediscover it. Only a
+        # structurally name-anchored local part teaches anything (see
+        # infer_template), so a shared mailbox that slipped a gate teaches
+        # nothing rather than poisoning the ledger.
+        if email:
+            _local, _, _dom = email.partition("@")
+            _tpl = infer_template(first, last, _local)
+            if _tpl and _dom:
+                learned_formats[_dom.lower()] = _tpl, (
+                    result.get("email_source_url") or result.get("source_url") or "")
 
     # ONE address may only represent ONE business (added 2026-08-06).
     # A hotel group's shared mailbox gets attributed to every property the agent
@@ -1026,6 +1150,15 @@ def phase_merge() -> None:
     if survivors:
         print(f"  email basis: {dict(basis)} "
               f"({verbatim}/{len(survivors)} verbatim, rest inferred — watch Brevo bounces)")
+    known_before = load_format_ledger()
+    new_formats = {d: v for d, v in learned_formats.items()
+                   if known_before.get(d, ("", ""))[0] != v[0]}
+    for _d, (_t, _u) in new_formats.items():
+        remember_format(_d, _t, _u)
+    if new_formats:
+        print(f"  email-format ledger: learned {len(new_formats)} new domain convention(s) "
+              f"-> {FORMAT_LEDGER} (replayed by every future fire, no search needed)")
+
     n_retired = _retire_unreachable(unreachable)
     if smtp_probed:
         print(f"  SMTP rescue: {smtp_probed} name-found-no-email lead(s) probed, "

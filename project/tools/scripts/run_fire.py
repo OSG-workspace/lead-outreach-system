@@ -644,7 +644,7 @@ def main():
         try:
             import smtp_email_probe as _sep
             _p25 = getattr(_sep, "port25_reachable", None)
-        except Exception:
+        except (Exception, SystemExit):   # the probe sys.exit()s on a missing dnspython
             _p25 = None
         if _p25 is not None:
             try:
@@ -1171,6 +1171,23 @@ def main():
         ebatches = sorted(work.glob("enrich-batch-*.txt"))
         if PLAN:
             print(f"  [plan] name-finder batches: {work}/enrich-batch-NNN.txt (one agent each)")
+            _prov = os.environ.get("RESEARCH_PROVIDER", "hybrid").strip().lower()
+            if _prov == "hybrid":
+                try:
+                    import perplexity_research as _pxr
+                    _key = "present" if _pxr.api_key() else "MISSING"
+                    _model = _pxr.DEFAULT_MODEL
+                except SystemExit:
+                    _key, _model = "MISSING (OPEN_ROUTER_API_KEY not in project/.env)", "perplexity/sonar"
+                except Exception as _e:
+                    _key, _model = f"unavailable ({_e})", "perplexity/sonar"
+                print(f"  [plan] Stage 5.5a naming: {_model}, one request per lead, writes "
+                      f"KnownDecisionMaker into each batch (API key: {_key})")
+                print(f"  [plan] Stage 5.5b name-finder: identity supplied, searches spent "
+                      f"on the ADDRESS; KnownEmailFormat replayed from "
+                      f"vault/lead-outreach/email-formats.txt when the domain is known")
+            else:
+                print(f"  [plan] research provider: {_prov}")
 
         # name-finder reads its own file (validated path-based dispatch) -> orchestrator stays lean
         def _nf_prompt(b: Path) -> str:
@@ -1185,7 +1202,89 @@ def main():
         # cache-write + 40M cache-read + 0.69M output tokens and 11.7 minutes of
         # wall clock — a net cost, not a saving. The phone ladder is still an
         # OPTIONAL block, shipped only when EnrichPhone is on.
-        if ebatches:
+        # RESEARCH PROVIDER (2026-09-03). "perplexity" answers the same question
+        # in ONE search-grounded request per lead instead of a 10-call agent
+        # loop that re-reads a ~15k prefix every turn (~220k tokens/lead). It
+        # writes the SAME enrich-out-NNN.json, so the merge, the direct-email
+        # gate and the SMTP rescue below are untouched. See
+        # perplexity_research.py for the measured split: it identifies the
+        # decision-maker well and must NOT construct addresses.
+        # DEFAULT IS `hybrid`, and the split is measured, not assumed. On the 133
+        # identical batch files of 2026-09-04-eu-hotels: perplexity named 106 vs
+        # the agent's 91, the agent closed 39 addresses vs perplexity's 5. So
+        # perplexity names and the agent addresses. `perplexity` (naming only,
+        # no agent) and `agent` (the old fan-out) remain available; the former
+        # was scored end-to-end against the 8 labelled winners of
+        # 2026-09-02-eu-hotels-2 (perplexity/sonar, real batch files with
+        # SitePages + harvested addresses, then the SAME merge + SMTP rescue):
+        #   agent      8/8 sendable
+        #   perplexity 1/8 closed outright (verbatim, name-linked)
+        #            + 5/8 named -> SMTP rescue -> 3 had an address path
+        #              (1 RCPT-verified, 2 catch-all needing site-format
+        #               construction that may still fail)
+        #            = 2-4 of 8, i.e. 25-50% of the yield
+        # Losing a lead is not free: a no_match drop retires that domain in
+        # disqualified-log.txt for NO_EMAIL_RETRY_DAYS (90), so an unvalidated
+        # provider swap burns ground the next fire cannot re-source. Flip it with
+        # RESEARCH_PROVIDER=perplexity once a --dry-run fire shows the survival
+        # rate holding; compare `survived` in enrich-summary.json.
+        provider = os.environ.get("RESEARCH_PROVIDER", "hybrid").strip().lower()
+        # HYBRID (default): perplexity names the decision-maker, the agent spends
+        # its searches on the address. Each side does the half it measurably
+        # wins — see annotate_batches() for the 133-lead head-to-head. Falls
+        # back to a plain agent fan-out if the key or the API is unavailable,
+        # because a naming pass failing must never cost the run its leads.
+        if ebatches and provider == "hybrid" and not PLAN:
+            try:
+                import perplexity_research as pxr
+                status(f"Stage 5.5 naming — perplexity ({pxr.DEFAULT_MODEL}), "
+                       f"{len(ebatches)} lead(s)")
+                print(f"\n=== Stage 5.5a naming: {pxr.DEFAULT_MODEL} x{len(ebatches)} "
+                      f"(one request per lead, no agent loop)", flush=True)
+                s = pxr.annotate_batches(work, max_workers=a.max_workers)
+                print(f"  perplexity: {s['named']}/{s['n']} decision-maker(s) named in "
+                      f"{s['elapsed']:.0f}s for ${s['cost']:.4f}. The name-finders below "
+                      f"now spend their searches on the ADDRESS, not the person.",
+                      flush=True)
+                # Durable proof in the run folder. This file is how a later
+                # session confirms the naming pass actually ran, instead of
+                # inferring it from the code — the standing rule in CLAUDE.md.
+                (run / "research-provider.json").write_text(json.dumps({
+                    "provider": "hybrid", "model": pxr.DEFAULT_MODEL,
+                    "leads": s["n"], "named": s["named"],
+                    "cost_usd": round(s["cost"], 4),
+                    "elapsed_s": round(s["elapsed"], 1)}, indent=2) + "\n")
+            except Exception as e:
+                # Never fail the run: the agents can still resolve identity. But
+                # say so LOUDLY and leave it in the artifacts, so a silent
+                # fallback is never mistaken for a naming pass that ran.
+                print(f"  WARN: perplexity naming pass unavailable ({e}); the "
+                      f"name-finders will resolve identity themselves as before.",
+                      flush=True)
+                status(f"Stage 5.5 naming FELL BACK to agents — {e}")
+                try:
+                    (run / "research-provider.json").write_text(json.dumps({
+                        "provider": "agent-fallback", "error": str(e)[:300]}, indent=2) + "\n")
+                except Exception:
+                    pass
+            fan_out("name-finder", [_nf_prompt(b) for b in ebatches],
+                    "Stage 5.5 name-finder", a.max_workers,
+                    include={"phone"} if wa_on else None)
+        elif ebatches and provider == "perplexity" and not PLAN:
+            import perplexity_research as pxr
+            status(f"Stage 5.5 research — perplexity ({pxr.DEFAULT_MODEL}), "
+                   f"{len(ebatches)} lead(s)")
+            print(f"\n=== Stage 5.5 research: perplexity/{pxr.DEFAULT_MODEL} "
+                  f"x{len(ebatches)} (one request per lead)", flush=True)
+            try:
+                s = pxr.run_batches(work, max_workers=a.max_workers)
+                print(f"  perplexity: {s['n']} lead(s) in {s['elapsed']:.0f}s — "
+                      f"{s.get('named', 0)} decision-maker(s) named, {s['found']} with a "
+                      f"verbatim email, ${s['cost']:.4f}. Addresses for the rest are the "
+                      f"SMTP rescue's job in the merge.", flush=True)
+            except SystemExit as e:
+                die("Stage 5.5 research (perplexity)", str(e))
+        elif ebatches:
             fan_out("name-finder", [_nf_prompt(b) for b in ebatches],
                     "Stage 5.5 name-finder", a.max_workers,
                     include={"phone"} if wa_on else None)

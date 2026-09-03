@@ -71,6 +71,6 @@ if command -v caffeinate >/dev/null 2>&1; then
         echo "WARNING: firing on BATTERY. caffeinate cannot prevent clamshell sleep."
         echo "         Keep the lid OPEN or plug in, or this run will stall mid-fire."
     fi
-    exec caffeinate -ims python3 tools/scripts/run_fire.py "$SLUG" "$@"
+    exec caffeinate -ims "$PYV" tools/scripts/run_fire.py "$SLUG" "$@"
 fi
-exec python3 tools/scripts/run_fire.py "$SLUG" "$@"
+exec "$PYV" tools/scripts/run_fire.py "$SLUG" "$@"
