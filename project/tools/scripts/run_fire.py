@@ -1242,10 +1242,12 @@ def main():
                 print(f"\n=== Stage 5.5a naming: {pxr.DEFAULT_MODEL} x{len(ebatches)} "
                       f"(one request per lead, no agent loop)", flush=True)
                 s = pxr.annotate_batches(work, max_workers=a.max_workers)
-                print(f"  perplexity: {s['named']}/{s['n']} decision-maker(s) named in "
-                      f"{s['elapsed']:.0f}s for ${s['cost']:.4f}. The name-finders below "
-                      f"now spend their searches on the ADDRESS, not the person.",
-                      flush=True)
+                print(f"  naming: {s['named']}/{s['n']} decision-maker(s) named in "
+                      f"{s['elapsed']:.0f}s for ${s['cost']:.4f} "
+                      f"({s.get('tier1_named', 0)} by tier-1 from site text, "
+                      f"{s.get('sonar_requests', s['n'])} sonar search(es)). The "
+                      f"name-finders below now spend their searches on the ADDRESS, "
+                      f"not the person.", flush=True)
                 # Durable proof in the run folder. This file is how a later
                 # session confirms the naming pass actually ran, instead of
                 # inferring it from the code — the standing rule in CLAUDE.md.
@@ -1253,7 +1255,15 @@ def main():
                     "provider": "hybrid", "model": pxr.DEFAULT_MODEL,
                     "leads": s["n"], "named": s["named"],
                     "cost_usd": round(s["cost"], 4),
-                    "elapsed_s": round(s["elapsed"], 1)}, indent=2) + "\n")
+                    "elapsed_s": round(s["elapsed"], 1),
+                    # The tier-1/sonar split, so a later session can confirm the
+                    # cheap pass ran and what it saved instead of inferring it
+                    # from the code. sonar_requests x ~$0.00616 is the bill.
+                    "tier1_model": pxr.TIER1_MODEL if pxr.TIER1_ENABLED else None,
+                    "tier1_named": s.get("tier1_named", 0),
+                    "tier1_cost_usd": round(s.get("tier1_cost", 0.0), 4),
+                    "sonar_requests": s.get("sonar_requests", s["n"]),
+                }, indent=2) + "\n")
             except Exception as e:
                 # Never fail the run: the agents can still resolve identity. But
                 # say so LOUDLY and leave it in the artifacts, so a silent
