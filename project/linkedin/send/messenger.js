@@ -174,7 +174,9 @@ async function main() {
   }
   const room = Math.max(0, Math.min(dayCap - sentToday, weekRoom));
   const pending = queue.entries
-    .filter((e) => state.leads[e.profileUrl]?.dmStatus !== 'sent')
+    // A journey entry carries its own step gate (generate-dm.js checks the step
+    // history), so a follow-up is allowed past the blanket "already DMed" filter.
+    .filter((e) => e.journeyStep || state.leads[e.profileUrl]?.dmStatus !== 'sent')
     .slice(0, room);
 
   console.log(`[messenger] ${dryRun ? 'DRY RUN' : 'LIVE'} — day ${day}, dm cap ${dayCap}, ` +

@@ -63,3 +63,48 @@ def clear() -> int:
         f.unlink()
         n += 1
     return n
+
+
+def key_path(provider: str, payload: Any) -> Path:
+    """The on-disk path a (provider, payload) pair caches to — exposed so a
+    prune can compute the set of files that are still worth keeping."""
+    return _key(provider, payload)
+
+
+def prune(keep: "set[Path]", ttl: int = DEFAULT_TTL, providers: "tuple[str, ...]" = ("ddgs", "openweb")) -> dict:
+    """Delete cached pages that are no longer useful.
+
+    A page is useless when it has EXPIRED (older than ttl) or is ORPHANED —
+    no stored audience's query matrix can ever ask for it again (the audience
+    was deleted or redefined). Orphan detection applies only to `providers`,
+    whose keys are computable from the audiences; other providers' entries are
+    pruned on age alone. The operator's standing rule (2026-09-02): once a
+    cached page can no longer serve a fire, it must not stay on disk.
+    """
+    now = time.time()
+    out = {"expired": 0, "orphaned": 0, "kept": 0, "skipped": ""}
+    files = list(CACHE.rglob("*.json"))
+    # Safety: if the keep-set matches NOTHING on disk while pages exist, the
+    # keep-set is wrong (a key-shape change), not the cache. Refuse to prune
+    # orphans in that case rather than wipe every useful page.
+    if files and keep and not any(f in keep for f in files):
+        out["skipped"] = "keep-set matched no cached file; orphan prune refused (expiry still applied)"
+        providers = ()
+    for f in files:
+        try:
+            at = json.loads(f.read_text(encoding="utf-8")).get("_at", 0)
+        except Exception:
+            at = 0
+        if now - at > ttl:
+            f.unlink(missing_ok=True)
+            out["expired"] += 1
+            continue
+        if f.parent.name in providers and f not in keep:
+            f.unlink(missing_ok=True)
+            out["orphaned"] += 1
+            continue
+        out["kept"] += 1
+    for d in CACHE.iterdir():
+        if d.is_dir() and not any(d.iterdir()):
+            d.rmdir()
+    return out

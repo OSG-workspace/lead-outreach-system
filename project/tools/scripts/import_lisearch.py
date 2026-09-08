@@ -151,6 +151,24 @@ def pool_from_audience(li_root: Path, slug: str) -> list[dict]:
     return out
 
 
+def _num(*values) -> float:
+    """First value that parses as a number, else 0.
+
+    owners.csv is written by li-search and its column set has changed once
+    already (a `strength` column landed between `location` and `match` on
+    2026-09-03), which shifted every field after it in rows appended against an
+    older header. A crash here reported as a stack trace what is really "that
+    CSV is one column out of step" — and it aborted a handoff that had already
+    done its work. A score is a ranking hint, so an unreadable one is a 0, not
+    an abort."""
+    for v in values:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
 def title_for_tiering(row: dict) -> str:
     """The row's own title, or the title li-search matched on (`title=Founder`
     inside `match`) when the index gave a headline with no role in it."""
@@ -238,7 +256,7 @@ def build(pool: list[dict], *, li_root: Path, held: dict[str, str], suppressed: 
             # The one hook the index gives us: the search-result snippet.
             "snippet": (rich.get("summary") or "").strip() or None,
             "match": row.get("match") or rich.get("match"),
-            "score_lisearch": float(row.get("score") or rich.get("score") or 0),
+            "score_lisearch": _num(row.get("score"), rich.get("score")),
             "sources": rich.get("sources") or [s for s in (row.get("sources") or "").split("+") if s],
             "eu_flag": bool(rich.get("eu_flag")),
             "audience": slug, "brief": brief, "origin": "li-search", "route": "linkedin",

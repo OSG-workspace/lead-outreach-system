@@ -63,6 +63,14 @@ own logged-in account; `li-search/` only reads licensed people-data APIs.
    in one findable place — that folder is it. For Shughol Lebanon the brief
    name is `shughol-lebanon` and the audiences are the four `lb-*` slugs.
 
+   Add `--verify` when the batch is going to be MESSAGED rather than just
+   listed. It checks each candidate against the brief before delivering it
+   (perplexity/sonar, ~$0.0056/row, hard-capped by `--verify-max`), refuses only
+   a confident off-spec answer, and records refusals in `rejected.csv`. It is
+   PAID and off by default, so ask the user before spending — a few cents buys
+   precision on the ~50 rows the 90-invites-a-week channel can actually send,
+   which is the scarce good. See li-search/README.md "the delivery gate".
+
 5. **Outreach is a separate command.** When the user wants these people
    *messaged*, that is `/li-outreach <brief>` (`./linkedin-run handoff <brief>`),
    which takes the delivered pool into `project/linkedin/`'s invite → accept →

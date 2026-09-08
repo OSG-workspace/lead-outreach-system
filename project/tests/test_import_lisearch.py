@@ -221,3 +221,21 @@ def test_templated_flag_reaches_the_backlog(tmp_path):
     backlog = json.loads((state / "backlog.json").read_text())
     assert len(backlog) == 2 and all(b["templated"] is True for b in backlog)
     assert {b["message"] for b in backlog} == {"Hi Hala, same text for everyone.", "Hi Naji, same text for everyone."}
+
+
+def test_a_shifted_or_unreadable_score_column_does_not_abort_the_handoff(tmp_path):
+    """li-search's owners.csv gained a `strength` column on 2026-09-03, which
+    shifted every field after it in rows appended against the older header. A
+    score is a ranking hint; an unreadable one must not kill a handoff."""
+    rows = [_row("sara-k", "Sara K", "Founder"), _row("omar-h", "Omar H", "Owner")]
+    rows[0]["score"] = "title=Owner;geo=country;industry=IT services"   # a match string, shifted in
+    rows[1]["score"] = ""
+    root = _li_search(tmp_path, rows, [_lead(r["linkedin_account"]) for r in rows])
+    state = _state(tmp_path)
+    run = tmp_path / "run"
+    r = _run("import_lisearch.py", "--brief", "test-brief", "--li-search-root", str(root),
+             "--run-dir", str(run), env={"LINKEDIN_STATE_DIR": str(state)})
+    assert r.returncode == 0, r.stdout + r.stderr
+    taken = json.loads((run / "people-qualified.json").read_text())
+    assert [p["lead_id"] for p in taken] == ["sara-k", "omar-h"]
+    assert all(p["score_lisearch"] == 0.0 for p in taken)

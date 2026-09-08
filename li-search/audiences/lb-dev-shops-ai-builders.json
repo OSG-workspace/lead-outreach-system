@@ -236,7 +236,7 @@
   ],
   "notes": "Pitch = Message 2 (onboard as vetted builder). Competitor-avoid list is excluded by keyword: Eurisko, Creative 4 All, Webspot, Botsify, LFT.",
   "created_at": "2026-09-02T07:10:58Z",
-  "updated_at": "2026-09-02T11:36:16Z",
+  "updated_at": "2026-09-04T09:40:28Z",
   "fired": [
     {
       "run_id": "2026-09-02-lb-dev-shops-ai-builders",
@@ -292,6 +292,26 @@
       "run_id": "2026-09-02-lb-dev-shops-ai-builders",
       "at": "2026-09-02T11:36:16Z",
       "leads": 704
+    },
+    {
+      "run_id": "2026-09-02-lb-dev-shops-ai-builders",
+      "at": "2026-09-02T13:32:29Z",
+      "leads": 832
+    },
+    {
+      "run_id": "2026-09-03-lb-dev-shops-ai-builders",
+      "at": "2026-09-03T08:53:53Z",
+      "leads": 832
+    },
+    {
+      "run_id": "2026-09-03-lb-dev-shops-ai-builders",
+      "at": "2026-09-03T09:35:17Z",
+      "leads": 832
+    },
+    {
+      "run_id": "2026-09-04-lb-dev-shops-ai-builders",
+      "at": "2026-09-04T09:40:28Z",
+      "leads": 1342
     }
   ]
 }

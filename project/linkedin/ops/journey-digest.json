@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-09-07T11:57:02.401Z",
+  "lastRunAt": "2026-09-07T11:57:02.401Z",
+  "counts": {
+    "invitesPending": 0,
+    "accepted": 0,
+    "inJourney": 0,
+    "replied": 0,
+    "done": 0
+  },
+  "overdue": [],
+  "cold": []
+}

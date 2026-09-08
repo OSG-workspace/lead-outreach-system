@@ -31,6 +31,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -208,32 +209,59 @@ class DdgsAdapter(Adapter):
                    "backend": backend, "region": self.config.get("region", "wt-wt"),
                    "delay": float(self.config.get("delay_seconds", 1.5)),
                    "max_error_streak": int(self.config.get("max_error_streak", 8))}
+            self.report("ddgs 0/%d queries to fetch (%d already cached)" % (len(plan), len(queries) - len(plan)))
+            # STREAM the child's output: every page is cached the moment it
+            # arrives, so a kill, a crash or a stall loses at most one page —
+            # not an hour of fetching. A watchdog kills the child when no line
+            # has arrived for `stall_seconds` (an engine hanging, or backoff
+            # gone pathological); whatever streamed back is kept.
+            import threading
             proc = subprocess.Popen([py, "-c", CHILD], stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            assert proc.stdin and proc.stdout
+            proc.stdin.write(json.dumps(job))
+            proc.stdin.close()
+            stall = int(self.config.get("stall_seconds", 600))
+            last = [time.time()]
+            stop = threading.Event()
+
+            def watchdog():
+                while not stop.wait(15):
+                    if time.time() - last[0] > stall:
+                        print("    ddgs: no page for %ds — stopping the fetch, keeping %d quer%s"
+                              % (stall, len(fetched), "y" if len(fetched) == 1 else "ies"))
+                        proc.kill()
+                        return
+            threading.Thread(target=watchdog, daemon=True).start()
+            done_q = 0
             try:
-                out, err = proc.communicate(json.dumps(job),
-                                            timeout=int(self.config.get("timeout_seconds", 3600)))
-            except subprocess.TimeoutExpired as e:
-                proc.kill()
-                out = e.stdout or ""
-                if isinstance(out, bytes):
-                    out = out.decode("utf-8", "replace")
-                print("    ddgs: timed out; kept what had streamed back")
-            for line in (out or "").splitlines():
+                for line in proc.stdout:
+                    last[0] = time.time()
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    if rec.get("fatal"):
+                        print("    ddgs: %s" % rec["fatal"])
+                        break
+                    if rec.get("error"):
+                        errors += 1
+                        continue
+                    q, page = rec["q"], int(rec.get("page", 1))
+                    cache.put(self.name, self._key(q, page, backend, per_query), rec)
+                    pages_by_q.setdefault(q, []).append(rec)
+                    if q not in fetched:
+                        fetched.add(q)
+                        done_q += 1
+                        if done_q % 25 == 0:
+                            self.report("ddgs %d/%d queries fetched, %d errors" % (done_q, len(plan), errors))
+            finally:
+                stop.set()
                 try:
-                    rec = json.loads(line)
+                    proc.kill()
                 except Exception:
-                    continue
-                if rec.get("fatal"):
-                    print("    ddgs: %s" % rec["fatal"])
-                    break
-                if rec.get("error"):
-                    errors += 1
-                    continue
-                q, page = rec["q"], int(rec.get("page", 1))
-                cache.put(self.name, self._key(q, page, backend, per_query), rec)
-                pages_by_q.setdefault(q, []).append(rec)
-                fetched.add(q)
+                    pass
+            self.report("ddgs fetched %d/%d queries, %d errors" % (done_q, len(plan), errors))
             if errors:
                 print("    ddgs: %d quer%s returned an engine error (not cached)."
                       % (errors, "y" if errors == 1 else "ies"))

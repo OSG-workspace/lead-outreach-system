@@ -1,0 +1,54 @@
+{
+  "_comment": "THE LEAD JOURNEY — declarative. Every lead walks these steps in order, one step per lead per tick, each gated by a wait measured from the step before it. lib/journey.js is the only interpreter; nothing here is enforced in a prompt. Changing a number here changes the schedule for every lead already mid-journey, because due dates are DERIVED from stamped timestamps, never precomputed and stored.",
+
+  "timezone": "Europe/Paris",
+
+  "_entry_comment": "Two ways in, one flow out. `invited` = we sent a connection request and they accepted; the clock starts at acceptance. `direct` = 1st-degree already, or an Open Profile we can message cold; there is no acceptance event so the clock starts the moment the lead enters the journey. After the outreach step the two are indistinguishable and share every following step.",
+  "entry": {
+    "invited": { "clock": "acceptedAt" },
+    "direct":  { "clock": "enteredAt" }
+  },
+
+  "steps": [
+    {
+      "id": "outreach",
+      "action": "dm",
+      "template": "outreach",
+      "after": { "days": 2, "from": "entry" },
+      "_comment": "The pitch. For an invited lead this lands 2 days after they accepted — long enough that it does not read as an automation firing on acceptance. For a direct lead `direct.waitDays` below overrides the 2."
+    },
+    {
+      "id": "video",
+      "action": "dm",
+      "template": "video",
+      "after": { "days": 3, "from": "outreach" },
+      "stopIf": ["replied"],
+      "_comment": "The video follow-up, 3 days after the outreach landed, and ONLY if they have not replied. `template.video` carries the asset the message links to."
+    },
+    {
+      "id": "notify",
+      "action": "notify",
+      "after": { "days": 3, "from": "video" },
+      "stopIf": ["replied"],
+      "_comment": "No reply to the video either. The pipeline stops sending and hands the lead to David in chat — the last step is a human decision, never another automated message."
+    }
+  ],
+
+  "_direct_comment": "A direct lead has no acceptance to wait behind. 0 = message on the next tick after entry.",
+  "direct": { "waitDays": 0 },
+
+  "_stop_comment": "Terminal conditions checked before EVERY step. `replied` is the one that matters: the moment a lead answers, the sequence is over and a human takes it.",
+  "stopConditions": {
+    "replied": "lead.repliedAt is set",
+    "suppressed": "lead is on the shared suppression list",
+    "notMessageable": "lead.dmStatus === 'not-messageable'"
+  },
+
+  "templates": {
+    "outreach": { "source": "lead.message", "_comment": "Written per-person by the li-writer agent at fire time and carried on the lead. Never templated here." },
+    "video":    { "source": "config/journey-video.md", "asset": null, "_comment": "The one video follow-up. `asset` is the URL the message points at; David supplies both the text and the link. Until then journey_tick.js refuses to queue a video step rather than sending an empty message." }
+  },
+
+  "_caps_comment": "Journey DMs are DMs: they are counted and capped by config/limits.json (dmRamp / dmWeeklyMax) exactly like any other. This engine only decides WHO is due; messenger.js decides how many actually go.",
+  "maxNotifyPerTick": 25
+}

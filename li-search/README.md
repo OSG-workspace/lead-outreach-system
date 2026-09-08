@@ -96,9 +96,21 @@ so a vendor disappearing is the **base rate** in this category, not the tail.
 two free providers and costs nothing. Adding a key is an explicit opt-in to
 that provider's pricing.
 
+The one paid path is the delivery gate, `export --verify` / `verify`, which is
+**off by default and never touches sourcing**: it uses OpenRouter
+(`OPEN_ROUTER_API_KEY`, the same key and the same deliberate exception
+`project/CLAUDE.md` already makes for research) at ~$0.0056 per row checked, on
+the ~50 rows a batch actually delivers. With the flag absent, this tool still
+costs nothing.
+
 Guards against surprise spend:
-- `--dry-run` plans a fire and fetches nothing;
-- responses are cached with a 30-day TTL, so re-firing an audience is nearly free;
+- `--dry-run` plans a fire and fetches nothing; `verify` without `--apply` is a
+  dry run, and `--verify-max` caps paid calls per export;
+- responses are cached with a 30-day TTL, so re-firing an audience is nearly free —
+  and **pruned automatically after every fire**: a page that has expired, or that no
+  stored audience's query matrix can ever ask for again, is deleted on the spot
+  (`./li-search cache --prune` does the same by hand). The cache is local files
+  under `cache/`; nothing in it leaves the machine;
 - `coresignal.max_collects` is a hard ceiling on credits per fire;
 - a 402 from any provider stops that provider rather than looping.
 
@@ -164,9 +176,65 @@ Run folders are provenance. What the operator keeps is `results/<brief>/`:
   and never repeated across batches; brief-named (seeded) rows come first.
 - `batch-NN.csv` — each delivery exactly as handed over.
 - `accounts.txt` — the account names alone.
+- `rejected.csv` — rows the `--verify` gate refused, with the reason.
 
 Re-fire the audiences, run `export` again, and only the genuinely new
 qualified accounts are appended as the next batch.
+
+### `--verify` — the delivery gate (paid, opt-in, off by default)
+
+```bash
+./li-search export shughol-lebanon --audiences <slugs> --take 50 --verify
+./li-search verify shughol-lebanon --audiences <slugs> --limit 50   # already-delivered rows; dry run
+./li-search verify shughol-lebanon --audiences <slugs> --limit 50 --apply
+```
+
+Qualification reads title / geo / industry off the row's own SERP text, and on
+2026-09-03 that left 265 of 6,414 rows qualified. The rows it cannot settle are
+not badly written, they are opaque — 502 of 574 "owner title + Lebanon,
+industry unknown" rows in the marketing audience carry a company name no regex
+can classify (JADWA, IN ACTION, Flow Beirut). `--verify` asks a search-grounded
+model (perplexity/sonar over OpenRouter) one question about a row that already
+exists: **does this person LEAD a business of the kind the brief describes?**
+
+- **Sourcing is untouched.** The model never produces leads — asked to list
+  profiles it invents slugs, and "every account came from a real index hit" is
+  this tool's guarantee. It only ever judges a row ddgs already found.
+- **It gates DELIVERY, not the pool.** Verifying all 2,906 near-miss rows would
+  cost ~$16 and add ~1,090 qualified accounts, but the channel sends 90 invites
+  a week and the pool already holds 265 qualified plus 278 delivered. Certainty
+  about the ~50 rows a batch hands over costs cents; volume nobody can send does
+  not. `--verify-max` is a hard ceiling on paid calls (default 3× `--take`).
+- **Only a confident, identified negative refuses a row.** Not found, low
+  confidence, a failed call — all delivered anyway, stamped `unverified`. Same
+  asymmetry the email chain's SMTP ladder learned: a positive is a good signal,
+  a negative is a useless one.
+- **The model reports facts; this tool applies the contract.** It returns the
+  role verbatim; `fire.title_hit` decides whether that role is owner-equivalent.
+  Asked to judge seniority itself it refused two Managing Directors on the first
+  live run. Geography is not re-judged at all — `geo_hit` settles it off the
+  profile's own country subdomain, and letting the model rule on it refused a
+  creative studio and a branding agency for being "not Lebanon-based".
+- **Sector is judged against the whole brief**, not the one audience that
+  surfaced the row: an ad-agency owner the PR audience found is still a lead.
+- Verdicts are cached 30 days per (account, brief, model), so re-running
+  `export` pays nothing for rows it already judged.
+- Answers land in four columns beside the deterministic ones —
+  `verified`, `verified_role`, `verified_sector`, `verify_source` — never over
+  `title` / `company` / `match`, which stay exactly what the index showed.
+  Refusals are written to `rejected.csv` with the reason, never silently dropped.
+
+Measured (2026-09-04, perplexity/sonar, ~$0.0056/row): on 16 unqualified rows it
+resolved 6 into genuine in-sector owners, and every rejection was correct — a
+hotel GM, a travel agency, an EPC contractor, a food manufacturer, and agency
+EMPLOYEES (a COO, a head of social media). On the delivered pool it found row
+#107, "Said Mehanna, Owner & Managing Director, ENERGIA sarl" — renewables and
+water treatment, not an agency — already handed over.
+
+`verify` is a dry run unless `--apply`, which stamps the columns and sets
+`status=withdrawn` on the off-spec rows. That column already exists for exactly
+this, and `project/tools/scripts/import_lisearch.py` already drops a withdrawn
+row from the LinkedIn handoff.
 
 ## Token discipline (for a Claude session running `/li-fire`)
 

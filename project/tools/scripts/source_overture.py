@@ -363,7 +363,16 @@ def main() -> None:
             iso = places[city][0]
             print(f"  scanning {city} ({iso}) for {vertical}…")
             cities_scanned += 1
-            rows = scan_city(con, src_glob, places[city], t, cfg)
+            try:
+                rows = scan_city(con, src_glob, places[city], t, cfg)
+            except RuntimeError as e:
+                # A single city's S3 read timing out is not a reason to lose
+                # every candidate already sourced this run (2026-09-04: one
+                # exhausted-retry timeout on one Dubai part-file killed a fire
+                # that had already banked 67 gmaps + 615 places leads). Skip
+                # it unledgered so the next fire retries this city fresh.
+                print(f"    {city}: SKIPPED — {e}")
+                continue
 
             lines: list[str] = []
             unres: list[str] = []

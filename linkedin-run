@@ -14,6 +14,7 @@
 #   ./linkedin-run send                                    invites + sweep + DMs (LIVE)
 #   ./linkedin-run dry                                     same, sends nothing
 #   ./linkedin-run status                                  backlog / limits / breakers
+#   ./linkedin-run journey [plan|commit|cold|replied <url>] the per-lead schedule
 #   ./linkedin-run chrome                                  open the LinkedIn Chrome
 #
 # Default campaign is gcc-outreach-li (the only linkedin-channel fixture).
@@ -124,6 +125,21 @@ print(f\"  halts:   acceptance <{d['acceptanceFloorPct']}% over {d['acceptanceFl
     echo
     echo "=== chrome ==="
     chrome_up && echo "  :9222 OPEN" || echo "  :9222 closed (./linkedin-run chrome)"
+    ;;
+  journey)
+    # The per-lead schedule: who is due for the outreach, the video, or the
+    # hand-off to David. Read-only unless "commit" is passed; daily.sh runs the
+    # committing version itself, so this is for looking, not driving.
+    cd "$LI"
+    sub="${1:-plan}"
+    case "$sub" in
+      plan)     exec node scripts/journey_tick.js ;;
+      commit)   exec node scripts/journey_tick.js --commit ;;
+      cold)     exec node scripts/notify_journey.js ;;
+      replied)  [ -n "${2:-}" ] || die "usage: ./linkedin-run journey replied <profile-url>"
+                exec node scripts/journey_tick.js --mark-replied "$2" ;;
+      *)        die "usage: ./linkedin-run journey [plan|commit|cold|replied <url>]" ;;
+    esac
     ;;
   chrome)
     exec bash "$LI/scripts/start_chrome.sh"

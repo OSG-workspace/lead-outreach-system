@@ -63,6 +63,16 @@ delivered (`li-search/results/<brief>/owners.csv`), skips anyone already in
 backlog and face the same limits. The writer's only first-hand hook is the
 search snippet; a handoff never opens a profile. It queues, it does not send.
 
+## After the first message: the journey
+
+Acceptance is not the end of the sequence. Every lead — invited or directly
+messageable — walks one schedule: outreach 2 days after acceptance, a video
+follow-up 3 days later if they are silent, and 3 days after that the pipeline
+stops messaging and emails David instead. Due dates are derived from stamps, so
+a missed day produces an overdue step, never a lost one.
+
+**See `JOURNEY.md`.** `daily.sh` runs it; `./linkedin-run journey plan` shows it.
+
 ## Daily commands
 
 ```bash

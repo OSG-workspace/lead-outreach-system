@@ -12,6 +12,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import lisearch.fire as _F
+_F.AUTO_PRUNE = False          # tests must never touch the operator's real cache
+
 from lisearch import audience as aud
 from lisearch.adapters.base import split_headline
 from lisearch.compliance import (ComplianceError, apply_suppression,
@@ -496,3 +499,322 @@ class TestStrength(unittest.TestCase):
         weak = make_lead("ddgs", "b", full_name="Y", title="Owner", company="Nouna Resto", country="LB",
                          summary="we hosted a digital marketing agency event")
         qualify(weak, a); self.assertTrue(weak["qualified"]); self.assertEqual(weak["strength"], "weak")
+
+
+class TestCachePrune(unittest.TestCase):
+    def test_expired_and_orphaned_pages_are_deleted_useful_kept(self):
+        import json, shutil, tempfile, time
+        from pathlib import Path
+        import lisearch.cache as C
+        tmp = Path(tempfile.mkdtemp()); orig = C.CACHE; C.CACHE = tmp
+        try:
+            C.put("ddgs", {"q": "useful"}, {"results": []})
+            C.put("ddgs", {"q": "orphan"}, {"results": []})
+            C.put("ddgs", {"q": "old"}, {"results": []})
+            old = C.key_path("ddgs", {"q": "old"})
+            old.write_text(json.dumps({"_at": time.time() - 40 * 86400, "value": {}}))
+            C.put("exa", {"q": "keyed-provider-page"}, {"results": []})   # not orphan-pruned
+            r = C.prune({C.key_path("ddgs", {"q": "useful"})}, ttl=30 * 86400)
+            self.assertEqual((r["expired"], r["orphaned"], r["kept"]), (1, 1, 2))
+            self.assertTrue(C.key_path("ddgs", {"q": "useful"}).exists())
+            self.assertFalse(C.key_path("ddgs", {"q": "orphan"}).exists())
+            self.assertFalse(old.exists())
+        finally:
+            C.CACHE = orig; shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestVerifyGate(unittest.TestCase):
+    """The delivery gate. No network: `ask` is injected, which is also how the
+    asymmetry gets tested — the rule that only a confident, IDENTIFIED negative
+    may refuse a row is the whole safety property here."""
+
+    def _ans(self, **kw):
+        base = {"identified": True, "is_owner": True, "in_sector": True,
+                "confidence": "high", "role": "Founder", "company": "X",
+                "company_sector": "marketing agency", "source_url": "https://x/", "reason": ""}
+        base.update(kw)
+        return base
+
+    def test_only_a_confident_identified_negative_rejects(self):
+        from lisearch.verify import decide, CONFIRMED, REJECTED, UNVERIFIED
+        self.assertEqual(decide(self._ans()), CONFIRMED)
+        # off-sector and off-role, confidently: the two real rejections
+        self.assertEqual(decide(self._ans(in_sector=False)), REJECTED)
+        self.assertEqual(decide(self._ans(is_owner=False)), REJECTED)
+        self.assertEqual(decide(self._ans(in_sector=False, confidence="medium")), REJECTED)
+        # silence is never evidence
+        self.assertEqual(decide(self._ans(identified=False)), UNVERIFIED)
+        self.assertEqual(decide(self._ans(in_sector=False, confidence="low")), UNVERIFIED)
+        self.assertEqual(decide({}), UNVERIFIED)
+        self.assertEqual(decide(self._ans(identified=False, is_owner=False)), UNVERIFIED)
+
+    def test_spec_is_built_from_the_stored_audience_and_geo_is_context_only(self):
+        """Geography must reach the model as CONTEXT, never as a test.
+
+        The first live run refused a creative studio and a branding agency,
+        both with "not a Lebanon/Batroun-based agency" in the reason, because
+        the spec folded location into the sector question. geo_hit() already
+        settles location off the profile's own country subdomain."""
+        from lisearch.verify import target_sentence
+        a = aud.new_audience("t", industry="digital marketing agency", countries=["LB"],
+                             cities=["Beirut"], keywords=["PR agency", "وكالة إعلانات"])
+        t = target_sentence([a])
+        self.assertIn("digital marketing agency", t)
+        self.assertIn("Lebanon", t)
+        self.assertIn("OWN or LEAD", t)
+        self.assertIn("do NOT judge it", t)
+        self.assertLess(t.index("SECTOR"), t.index("LOCATION"))
+        self.assertNotIn("وكالة", t)      # query fodder, not English prose
+
+    def test_sector_is_the_whole_brief_and_the_ladder_is_per_audience(self):
+        """A row the PR audience surfaced can be an ad-agency owner; it is still
+        a lead the brief asked for. Judging sector per audience refused four
+        good rows on the second live run."""
+        from lisearch.verify import Spec, specs, spec_for, target_sentence
+        agencies = aud.new_audience("ag", industry="creative agency", countries=["LB"])
+        devshops = aud.new_audience("dev", industry="software development shop", countries=["LB"])
+        by_slug = specs([agencies, devshops])
+        one = spec_for({"audience": agencies["slug"]}, by_slug, Spec("fallback"))
+        self.assertIn("creative agency", one.text)
+        self.assertIn("software development shop", one.text)     # the whole brief
+        self.assertIs(one.audience, agencies)                    # its own title ladder
+        self.assertNotIn("...", one.text)                        # never truncated
+        # an unknown audience falls back rather than judging against nothing
+        self.assertEqual(spec_for({"audience": "gone"}, by_slug, Spec("fb")).text, "fb")
+
+    def test_a_custom_title_list_never_narrows_who_counts_as_the_decider(self):
+        """All four Lebanon audiences dropped "Chief Executive Officer" from
+        their title list in favour of "CEO" plus Arabic titles — which is a
+        SEARCH choice. The gate refused Impact BBDO's "Chief Executive Officer
+        Levant" and Quantum's "Chief Executive" until the ladder fell back to
+        audience.DEFAULT_TITLES."""
+        from lisearch.verify import Spec, decide, CONFIRMED, REJECTED
+        narrow = aud.new_audience("t", industry="creative agency", countries=["LB"],
+                                  titles=["Owner", "CEO", "مؤسس"])
+        spec = Spec("...", narrow)
+        for role in ("Chief Executive Officer Levant & Head Of Regional Services MENA",
+                     "Chief Executive", "Managing Partner", "Proprietor"):
+            self.assertEqual(decide(self._ans(role=role), spec), CONFIRMED, role)
+        for role in ("Vice President", "Head of Social Media", "Account Director"):
+            self.assertEqual(decide(self._ans(role=role), spec), REJECTED, role)
+
+    def test_seniority_is_decided_by_this_tools_ladder_not_by_the_model(self):
+        """The first live run refused two Managing Directors — correctly
+        identified, in sector — because the model reads "owner" as equity while
+        audience.DEFAULT_TITLES treats a Levant SME's MD as the decider."""
+        from lisearch.verify import Spec, decide, CONFIRMED, REJECTED
+        a = aud.new_audience("t", industry="creative agency", countries=["LB"])
+        spec = Spec("...", a)
+        md = self._ans(role="Managing Director", is_owner=False)
+        self.assertEqual(decide(md, spec), CONFIRMED)          # ladder overrules the model
+        self.assertEqual(decide(md), REJECTED)                 # no ladder: the model is all there is
+        # the ladder still refuses what it always refused
+        self.assertEqual(decide(self._ans(role="Head of Social Media"), spec), REJECTED)
+        self.assertEqual(decide(self._ans(role="Vice President"), spec), REJECTED)
+        self.assertEqual(decide(self._ans(role="Former Owner"), spec), REJECTED)
+        self.assertEqual(decide(self._ans(role=""), spec), REJECTED)
+        # and an in-ladder role still fails on the sector
+        self.assertEqual(decide(self._ans(role="Founder", in_sector=False), spec), REJECTED)
+
+    def test_a_stub_answer_never_reaches_the_operators_cache(self):
+        """ttl<=0 means "do not use the cache" on WRITE as well as on read.
+        The gate tests below run against the real cache dir; before this, their
+        stub answers ("company X, sector hotel") were written into it."""
+        import lisearch.cache as C
+        from lisearch.verify import verify_row
+        row = {"linkedin_account": "stub-must-not-persist", "full_name": "P"}
+        verify_row(row, "t", key="k", ttl=0, ask=lambda r, t, **kw: (self._ans(), 0.005))
+        self.assertFalse(C.key_path("verify", {"account": row["linkedin_account"],
+                                               "target": "t", "model": "perplexity/sonar"}).exists())
+
+    def test_gate_refuses_off_spec_and_backfills_from_the_next_candidate(self):
+        from lisearch.export import gate
+        from lisearch.verify import REJECTED
+        rows = [{"linkedin_account": "a%d" % i, "full_name": "P%d" % i} for i in range(6)]
+        calls = []
+
+        def ask(row, target, **kw):
+            calls.append(row["linkedin_account"])
+            bad = row["linkedin_account"] in ("a0", "a2")
+            return self._ans(in_sector=not bad, company_sector="hotel" if bad else "agency"), 0.005
+
+        kept, rejected, st = gate(rows, 2, "t", key="k", model="m", ttl=0,
+                                  workers=2, budget=10, ask=ask)
+        self.assertEqual([k["linkedin_account"] for k in kept], ["a1", "a3"])
+        self.assertEqual([r["linkedin_account"] for r in rejected], ["a0", "a2"])
+        self.assertEqual((st["confirmed"], st["rejected"]), (2, 2))
+        self.assertEqual(st["cost"], 0.02)
+        self.assertLess(len(calls), len(rows))       # never verifies the whole pool
+
+    def test_gate_delivers_short_rather_than_unchecked_when_the_budget_runs_out(self):
+        from lisearch.export import gate
+        rows = [{"linkedin_account": "a%d" % i, "full_name": "P%d" % i} for i in range(20)]
+
+        def ask(row, target, **kw):
+            return self._ans(in_sector=False), 0.005     # everything is off-spec
+
+        kept, rejected, st = gate(rows, 10, "t", key="k", model="m", ttl=0,
+                                  workers=4, budget=8, ask=ask)
+        self.assertEqual(kept, [])
+        self.assertLessEqual(st["calls"], 12)            # budget honoured (+ one block)
+        self.assertEqual(len(rejected), st["calls"])
+
+    def test_a_failed_call_is_unverified_and_still_delivered(self):
+        from lisearch.export import gate
+        def ask(row, target, **kw):
+            return {"identified": False, "confidence": "low", "reason": "call failed"}, 0.0
+        kept, rejected, st = gate([{"linkedin_account": "a", "full_name": "P"}], 1, "t",
+                                  key="k", model="m", ttl=0, workers=1, budget=4, ask=ask)
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["_verify"]["verdict"], "unverified")
+        self.assertEqual(rejected, [])
+
+    def test_verdicts_are_cached_so_a_re_export_pays_nothing(self):
+        import shutil, tempfile
+        from pathlib import Path
+        import lisearch.cache as C
+        from lisearch.verify import verify_row
+        tmp = Path(tempfile.mkdtemp()); orig = C.CACHE; C.CACHE = tmp
+        n = []
+        try:
+            def ask(row, target, **kw):
+                n.append(1)
+                return self._ans(), 0.005
+            row = {"linkedin_account": "a", "full_name": "P"}
+            first = verify_row(row, "t", key="k", ask=ask)
+            again = verify_row(row, "t", key="k", ask=ask)
+            self.assertEqual(len(n), 1)
+            self.assertFalse(first["cached"]); self.assertTrue(again["cached"])
+            self.assertEqual(again["cost"], 0.0)
+            self.assertEqual(again["verdict"], first["verdict"])
+            # a DIFFERENT brief is a different question, so it is asked again
+            verify_row(row, "other target", key="k", ask=ask)
+            self.assertEqual(len(n), 2)
+        finally:
+            C.CACHE = orig; shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_the_gate_never_contacts_linkedin(self):
+        from lisearch.compliance import assert_allowed_host
+        from lisearch import verify as V
+        assert_allowed_host(V.ENDPOINT)                  # the only host it posts to
+        with self.assertRaises(ComplianceError):
+            assert_allowed_host("https://www.linkedin.com/in/x")
+
+
+class TestTitleAliases(unittest.TestCase):
+    """A stored audience's title spelling must not decide whether a headline
+    matches. lb-dev-shops-ai-builders stores "CTO", so "CTO, Messaging" matched
+    and "Chief Technology Officer" did not — three in-sector leads refused."""
+
+    def test_abbreviation_and_long_form_are_the_same_title(self):
+        from lisearch.fire import title_hit
+        a = aud.new_audience("t", industry="software", countries=["LB"], titles=["CTO", "CEO"])
+        for role in ("CTO", "CTO, Messaging", "Chief Technology Officer",
+                     "Group Chief Technical Officer", "CEO", "Chief Executive Officer",
+                     "Chief Executive"):
+            self.assertIsNotNone(title_hit({"title": role}, a), role)
+
+    def test_expansion_widens_spelling_never_seniority(self):
+        from lisearch.fire import title_hit
+        owners = aud.new_audience("t", industry="software", countries=["LB"],
+                                  titles=["Owner", "Founder"])
+        # this audience never asked for a CTO, so no spelling of one matches
+        for role in ("CTO", "Chief Technology Officer", "Chief Operating Officer"):
+            self.assertIsNone(title_hit({"title": role}, owners), role)
+        # and the demoters still win over any alias
+        md = aud.new_audience("t2", industry="software", countries=["LB"], titles=["MD"])
+        self.assertIsNone(title_hit({"title": "Deputy Managing Director"}, md))
+
+
+class TestCachedVerdictsFollowPolicy(unittest.TestCase):
+    def test_a_ladder_change_moves_cached_rows_without_paying_again(self):
+        """The day the ladder learned "Chief Technology Officer" == "CTO",
+        three already-paid-for rows had to flip from rejected to confirmed."""
+        import shutil, tempfile
+        from pathlib import Path
+        import lisearch.cache as C
+        from lisearch.verify import Spec, verify_row, CONFIRMED, REJECTED
+        tmp = Path(tempfile.mkdtemp()); orig = C.CACHE; C.CACHE = tmp
+        calls = []
+        try:
+            def ask(row, target, **kw):
+                calls.append(1)
+                return {"identified": True, "role": "Chief Technology Officer",
+                        "is_owner": False, "in_sector": True, "confidence": "high",
+                        "company": "Tippikl Labs", "company_sector": "AI"}, 0.005
+            row = {"linkedin_account": "a", "full_name": "P"}
+            narrow = aud.new_audience("no-cto", industry="software", countries=["LB"],
+                                      titles=["Owner", "Founder"])
+            wide = aud.new_audience("cto-ok", industry="software", countries=["LB"],
+                                    titles=["Owner", "Founder", "CTO"])
+            # same spec TEXT both times, so it is the same cache entry
+            first = verify_row(row, Spec("spec", narrow), key="k", ask=ask)
+            self.assertEqual(first["verdict"], REJECTED)
+            second = verify_row(row, Spec("spec", wide), key="k", ask=ask)
+            self.assertEqual(second["verdict"], CONFIRMED)
+            self.assertTrue(second["cached"])
+            self.assertEqual(second["cost"], 0.0)
+            self.assertEqual(len(calls), 1)             # never asked twice
+        finally:
+            C.CACHE = orig; shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestRecheckTargeting(unittest.TestCase):
+    def test_batch_filter_targets_one_delivery(self):
+        """Without it, "check the batch I just delivered" spends on row 1."""
+        import csv, shutil, tempfile
+        from pathlib import Path
+        import lisearch.cache as C
+        import lisearch.export as E
+        # Belt AND braces on the operator's cache: verify_ttl=0 below stops the
+        # read and the write, and CACHE is redirected in case a future edit
+        # drops that argument. An earlier version of this test had neither and
+        # filed four stub verdicts under cache/verify.
+        tmp = Path(tempfile.mkdtemp()); orig = E.RESULTS; E.RESULTS = tmp
+        orig_cache = C.CACHE; C.CACHE = tmp / "cache"
+        try:
+            d = tmp / "brief"; d.mkdir()
+            with (d / "owners.csv").open("w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=E.FIELDS); w.writeheader()
+                for n, b in ((1, "1"), (2, "1"), (3, "10"), (4, "10")):
+                    w.writerow({"n": n, "batch": b, "linkedin_account": "a%d" % n,
+                                "full_name": "P%d" % n, "audience": "x"})
+            seen = []
+
+            def ask(row, target, **kw):
+                seen.append(row["linkedin_account"])
+                return {"identified": True, "role": "Owner", "in_sector": True,
+                        "is_owner": True, "confidence": "high"}, 0.005
+
+            res = E.recheck("brief", [], limit=50, batch="10", verify_ttl=0, ask=ask)
+            self.assertEqual(sorted(seen), ["a3", "a4"])
+            self.assertEqual(res["checked"], 2)
+        finally:
+            E.RESULTS = orig; C.CACHE = orig_cache
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestOwnersCsvMigration(unittest.TestCase):
+    def test_new_columns_are_appended_and_existing_rows_keep_their_values(self):
+        import csv, shutil, tempfile
+        from pathlib import Path
+        from lisearch.export import FIELDS, _migrate_master
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            f = tmp / "owners.csv"
+            old = ["n", "batch", "delivered_at", "audience", "linkedin_account", "linkedin_url",
+                   "full_name", "title", "company", "location", "strength", "match", "score",
+                   "sources", "status"]
+            with f.open("w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=old); w.writeheader()
+                w.writerow({"n": 1, "batch": 1, "linkedin_account": "kaysardaou",
+                            "full_name": "Kaysar Daou", "title": "Co-Founder", "score": 8.98})
+            self.assertEqual(_migrate_master(f), 1)
+            rows = list(csv.DictReader(f.open(encoding="utf-8")))
+            self.assertEqual(list(rows[0].keys()), FIELDS)
+            self.assertEqual(rows[0]["full_name"], "Kaysar Daou")
+            self.assertEqual(rows[0]["score"], "8.98")
+            self.assertEqual(rows[0]["verified"], "")
+            self.assertEqual(_migrate_master(f), 0)      # idempotent
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

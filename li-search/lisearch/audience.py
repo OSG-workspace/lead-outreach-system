@@ -45,6 +45,11 @@ DEFAULT_TITLES = [
     "Owner", "Founder", "CEO", "Managing Director", "General Manager", "Co-Founder",
     "Managing Partner", "Chairman", "President", "Co-Owner",
     "Chief Executive Officer", "Proprietor", "Partner", "Principal",
+    # "Chief Executive" without the "Officer" is how a good many Levant profiles
+    # word it (Quantum Communications' Eli Khoury, found 2026-09-04 by the
+    # delivery gate, which refused him until this landed). Whole-word matching
+    # plus the DEMOTERS keeps "Chief Executive Assistant" out.
+    "Chief Executive",
 ]
 
 # LinkedIn serves a member's public profile from a COUNTRY subdomain chosen by

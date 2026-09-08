@@ -56,12 +56,32 @@ else
     node scripts/sweep_acceptance.js
 fi
 
-step "4/6 queue DMs for the people who accepted"
-node queue/generate-dm.js --from-state
+step "4/6 queue DMs — the journey decides who is due today"
+# THE JOURNEY, not just "everyone who accepted". journey_tick.js walks every
+# lead through config/journey.json (outreach 2 days after acceptance, video 3
+# days later if silent, then hand to a human) and writes the leads-file below.
+# It is idempotent and derives due dates from stamps, so a skipped day produces
+# an overdue step, never a lost one.
+node scripts/journey_tick.js ${LIVE:+--commit}
+if [ -n "$LIVE" ] && [ -s state/journey-leads.json ]; then
+    node queue/generate-dm.js --leads-file state/journey-leads.json
+else
+    node queue/generate-dm.js --from-state
+fi
 
 step "5/6 send those DMs"
 node send/messenger.js $LIVE
 [ $? -eq 3 ] && echo "   (another messenger run is already active — skipped)"
+
+step "5b/6 stamp the journey steps that actually sent"
+# AFTER the send, never before: a step stamped at queue time would be skipped
+# forever if the message failed to go out.
+if [ -n "$LIVE" ]; then node scripts/journey_tick.js --reconcile; fi
+
+step "5c/6 email David the leads that went cold"
+# The journey's last step is a human decision, not another message. Digest via
+# the same Brevo account the email channel uses; dry runs print, never send.
+node scripts/notify_journey.js ${LIVE:+--send} || true
 
 step "6/6 retire invites nobody answered"
 # NOT housekeeping. An unanswered pending pile is a mass-inviting signal to
@@ -74,6 +94,13 @@ if [ -n "$LIVE" ]; then
 else
     node scripts/withdraw_pending.js
 fi
+
+step "7/7 publish the digest the cloud routine reads"
+# state/ never leaves this laptop. ops/journey-digest.json is the small, tracked,
+# PII-light summary a cloud supervisor can see; without this push it goes stale
+# and the cloud correctly reports the channel as stalled.
+node scripts/journey_digest.js
+[ -n "$LIVE" ] && bash scripts/publish_digest.sh
 
 echo
 echo "== done. state: $(node -e '

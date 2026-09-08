@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import audience as aud
+from . import cache as cache_mod
 from .adapters import build
 from .compliance import apply_suppression
 from .lead import dedupe
@@ -48,6 +49,11 @@ def done_line(res: Dict[str, Any]) -> str:
             % (res["audience"], len(res["leads"]), res["qualified"], res.get("strong", 0), res["new"],
                res["unique"], res["excluded"], prov))
 
+# The unit tests run fire() against a temp RUNS dir but the REAL cache and
+# audiences; they switch this off so a test never prunes the operator's cache
+# (it did once, on 2026-09-02, deleting ~1,100 already-migrated legacy blobs).
+AUTO_PRUNE = True
+
 SOURCE_WEIGHT = {"exa": 1.0, "coresignal": 1.0, "pdl": 0.95, "ddgs": 0.7, "delivered": 0.7, "openweb": 0.55}
 
 # A title containing one of these is NOT the decider even when it contains an
@@ -60,6 +66,31 @@ def _word(t: str) -> "re.Pattern[str]":
     return re.compile(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(t.lower()))
 
 
+# A headline writes the SAME job either way, and which spelling an audience
+# happens to store is an accident of how it was defined. Storing "CTO" and then
+# missing "Chief Technology Officer" cost three real leads on 2026-09-04 (Tippikl
+# Labs, eddress, Reflection Solutions — all correctly in sector), the same way
+# storing "CEO" missed "Chief Executive". Expansion applies ONLY to titles the
+# audience already lists, so this widens spelling, never seniority: an audience
+# that never asked for a CTO still never matches one.
+_ALIAS_GROUPS = (
+    ("ceo", "chief executive officer", "chief executive"),
+    ("cto", "chief technology officer", "chief technical officer"),
+    ("coo", "chief operating officer"),
+    ("md", "managing director"),
+    ("gm", "general manager"),
+    ("mp", "managing partner"),
+)
+
+
+def _forms(title: str) -> Tuple[str, ...]:
+    t = title.strip().lower()
+    for g in _ALIAS_GROUPS:
+        if t in g:
+            return g
+    return (t,)
+
+
 def title_hit(lead: Dict[str, Any], a: aud.Audience) -> Optional[Tuple[int, str]]:
     """(rank, matched title) when the lead's title carries an owner-equivalent
     title as a whole word — 'Partner' must not match 'Partnerships Manager',
@@ -70,7 +101,7 @@ def title_hit(lead: Dict[str, Any], a: aud.Audience) -> Optional[Tuple[int, str]
     if any(d in title for d in DEMOTERS):
         return None
     for i, t in enumerate(a.titles()):
-        if _word(t).search(title):
+        if any(_word(f).search(title) for f in _forms(t)):
             return i, t
     return None
 
@@ -362,6 +393,8 @@ def fire(
             continue
         t0 = time.time()
         status(run_dir, "provider %s running" % ad.name)
+        if not dry_run:
+            ad.progress = lambda msg, _n=ad.name: status(run_dir, "provider %s: %s" % (_n, msg))
         try:
             got = ad.search(a, limit=limit, ttl=ttl)
         except SystemExit:
@@ -464,6 +497,18 @@ def fire(
         (run_dir / "summary.json").write_text(
             json.dumps(summary, indent=1, ensure_ascii=False), encoding="utf-8")
         status(run_dir, done_line(result))
+        # Standing rule: a cached page that can no longer serve any stored
+        # audience, or has expired, is deleted right after the fire that
+        # used it. Nothing useless stays on disk.
+        try:
+            pr = prune_cache(config, ttl=ttl if ttl > 0 else 30 * 86400) if AUTO_PRUNE else \
+                {"expired": 0, "orphaned": 0, "kept": 0}
+            result["cache_pruned"] = pr
+            if pr["expired"] or pr["orphaned"]:
+                print("  cache: pruned %d expired + %d orphaned page(s), %d kept"
+                      % (pr["expired"], pr["orphaned"], pr["kept"]))
+        except Exception as e:
+            print("  cache: prune skipped (%s)" % e)
     return result
 
 
@@ -481,3 +526,22 @@ def write_csv(path: Path, leads: List[Dict[str, Any]]) -> None:
             row["sources"] = "+".join(l.get("sources") or [])
             row["qualified"] = "yes" if l.get("qualified") else "no"
             w.writerow(row)
+
+
+def prune_cache(config: Dict[str, Any], ttl: int = 30 * 86400, max_pages: int = 10) -> Dict[str, int]:
+    """Delete cached pages no stored audience can use any more, plus expired
+    ones. Runs after every fire (and on `cache --prune`). The keep-set is the
+    FULL query matrix of every stored audience, at every page depth up to
+    `max_pages`, so a deeper future fire still finds its shallower pages."""
+    from .adapters.base import web_queries
+    from .adapters.ddgs_engine import DEFAULT_BACKEND
+    keep = set()
+    dcfg = config.get("ddgs", {}) if config else {}
+    backend = str(dcfg.get("backend", DEFAULT_BACKEND))
+    n = int(dcfg.get("max_results", 30))
+    for a in aud.load_all():
+        for q in web_queries(a, 100000, max_titles=int(dcfg.get("max_titles", 12))):
+            keep.add(cache_mod.key_path("openweb", {"q": q}))
+            for page in range(1, max_pages + 1):
+                keep.add(cache_mod.key_path("ddgs", {"q": q, "backend": backend, "page": page, "n": n}))
+    return cache_mod.prune(keep, ttl=ttl)

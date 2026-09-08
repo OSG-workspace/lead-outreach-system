@@ -7,6 +7,8 @@
   bakeoff   Stage 1 of the research brief: same audience, every provider,
             compare recall/completeness BEFORE committing to a vendor
   providers what is configured, what is not, and what each costs
+  export    deliver the next batch of qualified accounts into results/<brief>/
+  verify    re-check ALREADY delivered rows against the brief (paid, opt-in)
   suppress  add an account to the never-emit list (erasure requests)
   cache     clear the cache
 """
@@ -22,9 +24,10 @@ from typing import Any, Dict, List
 from . import audience as aud
 from . import cache as cache_mod
 from .adapters import ALL, DEFAULT_ENABLED, build, default_providers
+from . import verify as verify_mod
 from .fire import done_line, fire, score
 from .lead import canonical_account
-from .export import export
+from .export import export, recheck
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -275,10 +278,46 @@ def cmd_suppress(args) -> int:
     return 0
 
 
+def _verify_line(st: Dict[str, Any]) -> str:
+    return ("verified: %d confirmed, %d unverified (kept), %d REJECTED — %d call(s), "
+            "%d cached, $%.4f" % (st["confirmed"], st["unverified"], st["rejected"],
+                                  st["calls"], st["cached"], st["cost"]))
+
+
+def _verify_progress():
+    """Liveness for a run that can take a minute. `export` passes None: its
+    output is the summary line plus the refused list, which is what a session
+    relays."""
+
+    def cb(i, n, row, res):
+        print("  [%d/%d] %-28s %-11s %s" % (
+            i, n, (row.get("full_name") or row.get("linkedin_account") or "")[:28],
+            res.get("verdict", "?"), ((res.get("sector") or res.get("reason") or "")[:60])),
+            flush=True)
+    return cb
+
+
 def cmd_export(args) -> int:
-    res = export(args.name, csvlist(args.audiences), args.take, min_strength=args.strength)
+    load_config()          # folds .env into the environment, where the key lives
+    if args.verify:
+        print("VERIFY gate ON — model %s, budget %d call(s) at ~$%.4f each."
+              % (args.verify_model or verify_mod.DEFAULT_MODEL,
+                 args.verify_max or args.take * 3, verify_mod.MEASURED_COST_PER_ROW))
+    res = export(args.name, csvlist(args.audiences), args.take, min_strength=args.strength,
+                 verify=args.verify, verify_max=args.verify_max,
+                 verify_model=args.verify_model, verify_ttl=args.verify_ttl * 86400
+                 if args.verify_ttl >= 0 else -1, verify_workers=args.verify_workers,
+                 on_verify=None)
     print("EXPORT %s: batch %d, %d delivered, %d total in owners.csv, %d qualified still undelivered"
           % (args.name, res["batch"], res["delivered"], res["total"], res["remaining"]))
+    if res["verify"]["ran"]:
+        print(_verify_line(res["verify"]))
+        for r in res["rejected"]:
+            print("  refused %-26s %-22s %s" % (r["linkedin_account"][:26],
+                                                (r["failed"] or "off-spec")[:22],
+                                                (r["verified_sector"] or r["reason"] or "")[:44]))
+        if res["rejected"]:
+            print("  (recorded in %s/rejected.csv)" % res["dir"])
     print("dir: %s" % res["dir"])
     if args.table:
         print("| # | Audience | S | LinkedIn account | Name | Title | Company |")
@@ -290,13 +329,58 @@ def cmd_export(args) -> int:
     return 0
 
 
+def cmd_verify(args) -> int:
+    """Re-check rows already delivered. Dry run unless --apply."""
+    load_config()
+    res = recheck(args.name, csvlist(args.audiences), limit=args.limit, apply=args.apply,
+                  recheck_all=args.all, batch=args.batch, verify_model=args.verify_model,
+                  verify_ttl=args.verify_ttl * 86400 if args.verify_ttl >= 0 else -1,
+                  verify_workers=args.verify_workers, on_verify=_verify_progress())
+    st = res["verify"]
+    print()
+    print("RECHECK %s: %d of %d delivered row(s) checked, %d still unchecked"
+          % (args.name, res["checked"], res["total"], res["pending"]))
+    print(_verify_line(st))
+    for f in res["withdrawn"]:
+        print("  OFF-SPEC  #%s %-26s %-22s -> %s" % (
+            f.get("n"), (f["full_name"] or f["linkedin_account"])[:26],
+            (f["company"] or "?")[:22], (f["verified_sector"] or f["reason"])[:50]))
+    if not args.apply:
+        print()
+        print("DRY RUN — nothing written. Re-run with --apply to stamp the verification")
+        print("columns and set status=withdrawn on the off-spec rows (the handoff already")
+        print("drops a withdrawn row: project/tools/scripts/import_lisearch.py).")
+    elif res["withdrawn"]:
+        print()
+        print("Applied: %d row(s) marked status=withdrawn in owners.csv and logged to rejected.csv."
+              % len(res["withdrawn"]))
+    return 0
+
+
 def cmd_cache(args) -> int:
-    if args.clear:
+    if args.prune:
+        from .fire import prune_cache
+        pr = prune_cache(load_config(), ttl=args.ttl * 86400)
+        print("Pruned %d expired + %d orphaned page(s); %d still useful and kept."
+              % (pr["expired"], pr["orphaned"], pr["kept"]))
+    elif args.clear:
         print("Cleared %d cached response(s)." % cache_mod.clear())
     else:
         n = sum(1 for _ in (ROOT / "cache").rglob("*.json"))
         print("%d cached response(s). Clear with: ./li-search cache --clear" % n)
     return 0
+
+
+def _verify_flags(sp, on_help) -> None:
+    """The gate's flags, shared by `export --verify` and `verify`, so the two
+    can never drift into judging the same brief by different settings."""
+    if on_help:
+        sp.add_argument("--verify", action="store_true", help=on_help)
+    sp.add_argument("--verify-model", dest="verify_model", default="",
+                    help="OpenRouter model (default %s)" % verify_mod.DEFAULT_MODEL)
+    sp.add_argument("--verify-ttl", dest="verify_ttl", type=int, default=-1,
+                    help="days a verdict stays valid (default 30; 0 forces a fresh answer)")
+    sp.add_argument("--verify-workers", dest="verify_workers", type=int, default=8)
 
 
 def main(argv=None) -> int:
@@ -367,10 +451,35 @@ def main(argv=None) -> int:
     e.add_argument("--table", action="store_true", help="also print the batch as a markdown table")
     e.add_argument("--strength", default="", choices=["", "strong"],
                    help="'strong' delivers only rows whose industry shows in title/company/name (or brief-seeded)")
+    _verify_flags(e, "check each candidate before delivering it (PAID, ~$%.4f/row); a confident "
+                     "off-spec answer is refused, silence is delivered anyway"
+                     % verify_mod.MEASURED_COST_PER_ROW)
+    e.add_argument("--verify-max", dest="verify_max", type=int, default=0,
+                   help="hard ceiling on paid calls for this export (default: 3x --take)")
     e.set_defaults(fn=cmd_export)
 
+    v = sub.add_parser("verify", help="re-check ALREADY delivered rows against the brief")
+    v.add_argument("name", help="brief name, e.g. shughol-lebanon")
+    v.add_argument("--audiences", required=True,
+                   help="comma list of the audience slugs this brief was built from — the gate "
+                        "judges against the same stored specification qualify() uses")
+    v.add_argument("--limit", type=int, default=50, help="rows to check this run (default 50)")
+    v.add_argument("--batch", default="",
+                   help="check only this delivery batch (the `batch` column, e.g. 10). Without it "
+                        "the walk starts at row 1 of owners.csv")
+    v.add_argument("--all", action="store_true",
+                   help="re-check rows that already carry a verdict, not just the unchecked ones")
+    v.add_argument("--apply", action="store_true",
+                   help="write the columns and set status=withdrawn on off-spec rows "
+                        "(default is a dry run that writes nothing)")
+    _verify_flags(v, None)
+    v.set_defaults(fn=cmd_verify)
+
     c = sub.add_parser("cache", help="inspect or clear the cache")
-    c.add_argument("--clear", action="store_true")
+    c.add_argument("--clear", action="store_true", help="delete every cached page")
+    c.add_argument("--prune", action="store_true",
+                   help="delete expired pages and pages no stored audience can ask for (runs automatically after every fire)")
+    c.add_argument("--ttl", type=int, default=30, help="days a page stays useful (default 30)")
     c.set_defaults(fn=cmd_cache)
 
     args = p.parse_args(argv)

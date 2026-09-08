@@ -257,7 +257,7 @@
   ],
   "notes": "Pitch = white-label capacity + Whish escrow (Message 1). Named seeds fire first. Generic-word firms (Maze, Ethos, Spirit, Social Lab, Vagary, Mind the gap) are NOT seeded by name to avoid false hits — find them via the founder names / keyword tiers.",
   "created_at": "2026-09-02T07:10:58Z",
-  "updated_at": "2026-09-02T12:43:52Z",
+  "updated_at": "2026-09-04T09:38:39Z",
   "fired": [
     {
       "run_id": "2026-09-02-lb-marketing-creative-agency-owners",
@@ -318,6 +318,26 @@
       "run_id": "2026-09-02-lb-marketing-creative-agency-owners",
       "at": "2026-09-02T12:43:52Z",
       "leads": 1408
+    },
+    {
+      "run_id": "2026-09-02-lb-marketing-creative-agency-owners",
+      "at": "2026-09-02T15:06:22Z",
+      "leads": 1514
+    },
+    {
+      "run_id": "2026-09-03-lb-marketing-creative-agency-owners",
+      "at": "2026-09-03T08:53:48Z",
+      "leads": 1514
+    },
+    {
+      "run_id": "2026-09-03-lb-marketing-creative-agency-owners",
+      "at": "2026-09-03T09:08:36Z",
+      "leads": 1969
+    },
+    {
+      "run_id": "2026-09-04-lb-marketing-creative-agency-owners",
+      "at": "2026-09-04T09:38:39Z",
+      "leads": 1969
     }
   ]
 }

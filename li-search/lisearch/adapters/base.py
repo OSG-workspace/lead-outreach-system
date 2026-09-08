@@ -26,6 +26,16 @@ class Adapter(object):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.key = os.environ.get(self.env_key or "", "") or self.config.get("api_key", "")
+        # fire() sets this to a status-file writer so a long fetch is visible
+        # from outside ("ddgs 340/1400 queries"); harmless when unset.
+        self.progress = None
+
+    def report(self, msg: str) -> None:
+        if self.progress:
+            try:
+                self.progress(msg)
+            except Exception:
+                pass
 
     # -- availability ---------------------------------------------------
     def available(self) -> bool:

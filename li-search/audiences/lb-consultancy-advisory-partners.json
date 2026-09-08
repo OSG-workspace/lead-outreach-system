@@ -239,7 +239,7 @@
   ],
   "notes": "Pitch = Message 3 (referral fee / reduced tier). Do-not-confuse: Beyond Group (Doumit) != Beyond Consulting Ltd (Jordan); CRI (Hamdan) != AUB Clinical Research Institute; Euromena Consulting != EuroMena Funds.",
   "created_at": "2026-09-02T07:10:58Z",
-  "updated_at": "2026-09-02T12:43:55Z",
+  "updated_at": "2026-09-04T09:38:43Z",
   "fired": [
     {
       "run_id": "2026-09-02-lb-consultancy-advisory-partners",
@@ -300,6 +300,21 @@
       "run_id": "2026-09-02-lb-consultancy-advisory-partners",
       "at": "2026-09-02T12:43:55Z",
       "leads": 1629
+    },
+    {
+      "run_id": "2026-09-03-lb-consultancy-advisory-partners",
+      "at": "2026-09-03T08:53:52Z",
+      "leads": 1629
+    },
+    {
+      "run_id": "2026-09-03-lb-consultancy-advisory-partners",
+      "at": "2026-09-03T09:35:01Z",
+      "leads": 2000
+    },
+    {
+      "run_id": "2026-09-04-lb-consultancy-advisory-partners",
+      "at": "2026-09-04T09:38:43Z",
+      "leads": 2000
     }
   ]
 }

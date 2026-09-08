@@ -30,6 +30,15 @@ not modified and does not learn that outreach exists.
    `owners.csv` and NOT already in the channel's `state.json` or `backlog.json`,
    so re-running it picks up the NEXT people, never the same ones.
 
+   These people are about to be MESSAGED, so this is the moment the delivery
+   gate earns its cents:
+   ```bash
+   ./li-search verify <brief> --audiences <slug1,slug2,…> --limit 50          # dry run
+   ./li-search verify <brief> --audiences <slug1,slug2,…> --limit 50 --apply  # marks off-spec rows withdrawn
+   ```
+   It is PAID (~$0.0056/row) and opt-in — ask first. A row it marks
+   `status=withdrawn` is dropped by the handoff automatically.
+
 2. **Check the pitch.** `project/templates/li-handoff/<brief>.pitch.json`
    gives li-writer the angle, proof link and CTA. If it does not exist the
    handoff falls back to `gcc-outreach-li/pitch.json`, which sells outreach

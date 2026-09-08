@@ -61,7 +61,14 @@ export function generateDmQueue({ limits, state, suppression, leads, now = new D
     if (blocked) { rejected.push({ lead, reason: blocked }); continue; }
 
     const prior = state.leads[url] || {};
-    if (prior.dmStatus === 'sent') { rejected.push({ lead, reason: 'already DMed' }); continue; }
+    // "Already DMed" is the right gate for a one-shot DM and the wrong one for a
+    // journey: the video follow-up is by definition a SECOND message to someone
+    // whose dmStatus is already 'sent'. A journey entry is therefore gated on its
+    // own step instead — the step must not already be stamped in the lead's
+    // history — which keeps the no-double-send guarantee per step.
+    const stepDone = lead.journeyStep && prior.journey?.history?.[lead.journeyStep];
+    if (stepDone) { rejected.push({ lead, reason: `journey step "${lead.journeyStep}" already sent` }); continue; }
+    if (!lead.journeyStep && prior.dmStatus === 'sent') { rejected.push({ lead, reason: 'already DMed' }); continue; }
     if (prior.dmStatus === 'not-messageable') {
       rejected.push({ lead, reason: 'previously found not messageable' }); continue;
     }
@@ -87,6 +94,7 @@ export function generateDmQueue({ limits, state, suppression, leads, now = new D
       profileUrl: url,
       message: lead.message.trim(),
       via: accepted ? 'accepted' : 'open-profile',
+      journeyStep: lead.journeyStep ?? null,
       templated: lead.templated === true,   // see queue/generate.js
     });
   }
