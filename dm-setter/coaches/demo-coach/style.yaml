@@ -1,0 +1,12 @@
+# Hand-written for the demo; `python -m setter train` measures this from a real export.
+lowercase: true
+lower_i: false
+end_period: false
+emoji_rate: 0.12
+top_emojis: ["🙌", "😂", "💪"]
+median_chars: 48
+p90_chars: 120
+bubbles_per_turn: 1.6
+laugh: "haha"
+openers: ["yo", "appreciate", "ha", "yeah", "100%"]
+phrases: ["makes sense", "fair enough", "honestly", "gotcha", "no stress", "that's huge"]

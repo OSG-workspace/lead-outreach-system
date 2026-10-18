@@ -1,0 +1,15 @@
+(outcome: booked)
+LEAD: how much is your coaching
+YOU: depends what you need honestly, some guys need full coaching, some just need a plan
+YOU: what are you looking to change?
+LEAD: lose about 15kg, i travel a lot for work
+YOU: gotcha, travel's a big one. how many nights a month you away?
+LEAD: like 8-10. hotel breakfast buffets kill me
+YOU: haha the buffet is undefeated. what happens if nothing changes by next year?
+LEAD: doctor already said my blood pressure is creeping up so not great
+YOU: yeah that's worth taking seriously. how serious are you about fixing it, 1-10?
+LEAD: 8
+YOU: fair enough. the call's 20 min, we'd map out how it works with the travel and you'd know exactly what it costs and looks like
+YOU: want to grab a time?
+LEAD: ok sure
+YOU: [booking link]

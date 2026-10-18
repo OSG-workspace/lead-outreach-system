@@ -1,0 +1,26 @@
+# The demo account's hub. Connect the demo Instagram account to this pack (/connect/demo-hub or connect-token).
+# It never calls the model: it routes each chat to the coach pack whose `demo_code` the person sends.
+name: "Setter Demo"
+handle: "yourbranddemo"
+mode: autopilot
+disclosure:
+  mode: profile
+  profile_confirmed: true           # the demo account's bio must say it is an AI setter demo
+
+demo:
+  hub: true
+  example_code: "MARCUS"            # shown in the menu; demo-coach answers to it
+  reset_word: "RESET"
+  debounce_seconds: 6               # demos answer faster than a live coach (20 s)
+  max_replies: 40                   # bot turns per run before it asks them to RESET
+  menu: "hey! this account demos AI DM setters for coaches. reply DEMO + the code you were sent (like DEMO {example}) and I'll turn into that coach's setter. you play the lead"
+  unknown: "hmm I don't have a setter for \"{code}\". check the code and send DEMO + code again"
+
+# "Comment DEMO" on a reel -> a private DM that starts the conversation.
+comment_triggers:
+  - keywords: ["DEMO"]
+    dm: "hey! here's your AI setter demo. reply DEMO + your code if you were sent one, or DEMO MARCUS to try a sample fitness coach. you play the lead"
+    public_replies: ["sent it, check your DMs", "just sent it over"]
+
+limits:
+  daily_usd: 0                      # the hub spends nothing; each coach pack's own daily_usd caps its demos

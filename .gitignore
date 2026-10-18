@@ -63,3 +63,10 @@ files.zip
 /output.json
 project/enrich-out-*.json
 project/vault/lead-outreach/sourced-log.txt
+
+# ===== dm-setter: conversations, tokens, Jev cache and trained coach packs (lead PII) =====
+dm-setter/data/
+dm-setter/coaches/*
+!dm-setter/coaches/_template/
+!dm-setter/coaches/demo-coach/
+!dm-setter/coaches/demo-hub/

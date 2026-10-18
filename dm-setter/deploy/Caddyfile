@@ -1,0 +1,4 @@
+# Caddy gets and renews the HTTPS certificate on its own. Point a DNS A record at the VPS first.
+setter.yourdomain.com {
+	reverse_proxy 127.0.0.1:8000
+}

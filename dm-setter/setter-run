@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Entry point: ./setter-run <command>  (serve, check, chat, eval, train, ...; ./setter-run -h lists them)
+set -euo pipefail
+cd "$(dirname "$0")"
+if [ ! -x .venv/bin/python ]; then
+  python3 -m venv .venv
+  .venv/bin/pip install -q -r requirements.txt
+fi
+if [ "${1:-}" = "test" ]; then shift; exec .venv/bin/python -m pytest -q "$@"; fi
+exec .venv/bin/python -m setter "$@"

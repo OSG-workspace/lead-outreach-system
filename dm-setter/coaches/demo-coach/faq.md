@@ -1,0 +1,3 @@
+- Do I need a gym? No, home with a couple of dumbbells works.
+- Is it a meal plan? It's a flexible plan built around what the family already eats, no separate meals.
+- Where are you based? Marcus is in New Jersey; clients are everywhere, it's all online.

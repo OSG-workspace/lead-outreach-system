@@ -1,0 +1,75 @@
+# One coach = one folder. Copy with: python -m setter new-coach <slug>
+# Everything here is read on every reply; edits apply within seconds, no restart.
+
+name: "Coach Name"                  # how leads know them (first name is used when writing as them)
+handle: "their_instagram_handle"
+what_i_do: "online coaching for <who> who want <result>"
+language: "English"
+# ig_user_id: "1784..."             # only if you attach the account without /connect
+
+# draft     = every reply waits in the dashboard for a person to approve (start here)
+# autopilot = confident, clean replies send themselves; anything flagged still waits
+mode: draft
+autopilot:
+  min_confidence: 0.75              # PROVISIONAL: raise it if approvals keep needing edits
+
+call:
+  name: "free strategy call"
+  length: "20-minute"
+  link: "https://calendly.com/your-link"   # the setter never types it; code sends it with a tracking token
+  closer: "me"                      # "me" = the coach runs the call, or a closer's name
+
+# What the setter must learn before it may pitch the call. `ask` tells it what the slot means.
+qualification:
+  - {slot: goal, ask: "the result they want", required: true}
+  - {slot: current, ask: "where they are now and what they've tried", required: true}
+  - {slot: obstacle, ask: "what's in the way", required: true}
+  - {slot: urgency, ask: "why now", required: false}
+  - {slot: commitment, ask: "ready to invest time and money in getting help", required: true}
+
+disqualify_if:
+  - "under 18"
+  - "only wants free advice and has no intention of investing in coaching"
+downsell: ""                        # a free resource for non-fits, e.g. "my free guide: https://..."
+allowed_links: ""                   # other URLs the setter may paste (space separated)
+
+disclosure:
+  # profile       = the bio says DMs are answered with AI help (set profile_confirmed once it does)
+  # first_message = the first automated reply in each thread carries first_message_line
+  mode: profile
+  profile_confirmed: false          # autopilot holds every reply until this is true (or mode is first_message)
+  first_message_line: "(quick heads up, I've got an AI assistant helping me keep up with DMs)"
+  bot_question: handoff             # "is this a bot?" -> handoff (you answer it) | disclose (send bot_answer)
+  bot_answer: "haha fair question. I've got an AI assistant helping me keep up with DMs, but the call is with me"
+
+hours:                              # outside these hours replies wait (unless the 24h window would close)
+  timezone: "America/New_York"
+  start: "08:00"
+  end: "23:00"
+
+humanize:
+  debounce_seconds: 20              # wait for the lead to finish typing a burst before answering
+  takeover_hours: 12                # after you type in the Instagram app, the bot stays out of that thread
+
+nudge:                              # one follow-up per 24h window if the lead goes quiet, never more
+  enabled: true
+  after_hours: 20
+  mode: llm                         # llm (context-aware) | template (zero tokens, picks one below)
+  templates: ["you still there?", "hey, did you get a chance to think about that?"]
+
+comment_triggers: []
+#  - keywords: ["GUIDE"]
+#    url: "https://..."
+#    dm: "hey! here's the guide you asked for {url}\n\nquick question, what made you want it?"
+#    public_replies: ["sent! check your DMs", "just sent it over"]
+
+limits:
+  daily_usd: 5                      # model spend cap per day; past it, replies wait for a person
+  max_links_per_thread: 2
+
+notify:
+  webhook_url: ""                   # Slack/Discord webhook for this coach (falls back to NOTIFY_WEBHOOK_URL)
+
+# style:                            # override anything `train` measured (style.yaml)
+#   lowercase: true
+#   emoji_rate: 0.2
